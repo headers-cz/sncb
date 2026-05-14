@@ -18,22 +18,38 @@ const GROUPS: CommandGroup[] = [
   { title: "Content", commands: ["website", "page", "folder"] },
   { title: "Agent", commands: ["agent"] },
   { title: "Account", commands: ["auth", "health"] },
-  { title: "Tool", commands: ["upgrade", "help"] },
+  { title: "Tool", commands: ["config", "upgrade", "help"] },
 ];
 
 const COMMAND_COL_WIDTH = 12;
 const OPTION_COL_WIDTH = 24;
+
+const BANNER = [
+  "   ____                            ",
+  "  / ___|  ___ _ __   ___  ___ __ _ ",
+  "  \\___ \\ / _ \\ '_ \\ / _ \\/ __/ _` |",
+  "   ___) |  __/ | | |  __/ (_| (_| |",
+  "  |____/ \\___|_| |_|\\___|\\___\\__,_|",
+];
 
 export function renderRootHelp(program: Command): string {
   const version = program.version() ?? "";
   const subs = new Map(program.commands.map((cmd): [string, Command] => [cmd.name(), cmd]));
   const lines: string[] = [""];
 
+  for (const row of BANNER) lines.push(ansi.yellow(row));
+  lines.push("");
   lines.push(
-    `  ${ansi.bold(ansi.yellow("sncb"))} ${ansi.dim(`v${version}`)}  ${ansi.dim("-")}  ${ansi.dim("Seneca REST API CLI")}`,
+    `  ${ansi.bold("sncb")} ${ansi.dim(`v${version}`)}  ${ansi.dim("-")}  ${ansi.dim("command-line interface for Seneca")}`,
   );
   lines.push("");
-  lines.push("  Manage websites, pages, folders, and agent config from your terminal.");
+  lines.push(
+    "  Seneca is the Headers platform for chatbots, knowledge bases, and help centers.",
+  );
+  lines.push(
+    "  Use sncb to manage websites, pages, folders, and agent configuration of your",
+  );
+  lines.push("  Seneca workspace - from your terminal, scripts, and CI pipelines.");
   lines.push("");
 
   lines.push(`${ansi.bold("USAGE")}`);
@@ -73,6 +89,9 @@ export function renderRootHelp(program: Command): string {
   lines.push("  sncb auth login");
   lines.push("  sncb health");
   lines.push("");
+  lines.push(`  ${ansi.dim("# Point sncb at a local Seneca instance")}`);
+  lines.push("  sncb config set apiUrl http://localhost:3002/");
+  lines.push("");
   lines.push(`  ${ansi.dim("# List and create content")}`);
   lines.push("  sncb website list");
   lines.push('  sncb page create --website <id> --title "Hello" --slug hello -f page.html');
@@ -84,7 +103,9 @@ export function renderRootHelp(program: Command): string {
   lines.push(
     `  ${ansi.dim("Run")} ${ansi.cyan("sncb <command> --help")} ${ansi.dim("for command-specific options.")}`,
   );
-  lines.push(`  ${ansi.dim("Docs: https://github.com/headers-cz/sncb")}`);
+  lines.push(`  ${ansi.dim("Seneca:")}  ${ansi.cyan("https://senecabot.com")}`);
+  lines.push(`  ${ansi.dim("Docs:")}    ${ansi.cyan("https://docs.senecabot.com")} ${ansi.dim("(coming soon)")}`);
+  lines.push(`  ${ansi.dim("Source:")}  ${ansi.cyan("https://github.com/headers-cz/sncb")}`);
   lines.push("");
 
   return lines.join("\n");

@@ -10,6 +10,7 @@ import { buildPageCommand } from "./commands/page.js";
 import { buildAgentCommand } from "./commands/agent.js";
 import { buildFolderCommand } from "./commands/folder.js";
 import { buildUpgradeCommand } from "./commands/upgrade.js";
+import { buildConfigCommand } from "./commands/config.js";
 import { ApiError, AuthRequiredError, NetworkError, exitCodeForError } from "./api/errors.js";
 import type { GlobalOptions } from "./lib/context.js";
 import { runBackgroundUpdateCheck } from "./lib/update-check.js";
@@ -35,6 +36,7 @@ export function buildProgram(): Command {
   program.addCommand(buildAgentCommand(getGlobal));
   program.addCommand(buildFolderCommand(getGlobal));
   program.addCommand(buildUpgradeCommand({ currentVersion: readVersion() }));
+  program.addCommand(buildConfigCommand());
 
   program.helpInformation = (): string => renderRootHelp(program);
   return program;
