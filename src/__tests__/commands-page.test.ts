@@ -15,6 +15,8 @@ let captured: CapturedRequest[];
 let fetchMock: ReturnType<typeof mock>;
 let origFetch: typeof fetch;
 let logSpy: ReturnType<typeof spyOn>;
+let stderrSpy: ReturnType<typeof spyOn>;
+let metaForPatch: { saved_as: "draft" | "live"; needs_publish: boolean } = { saved_as: "live", needs_publish: false };
 
 beforeEach(async () => {
   tempHome = await mkdtemp(join(tmpdir(), "sncb-page-"));
@@ -24,6 +26,8 @@ beforeEach(async () => {
   captured = [];
   origFetch = globalThis.fetch;
   logSpy = spyOn(console, "log").mockImplementation(() => undefined);
+  stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
+  metaForPatch = { saved_as: "live", needs_publish: false };
   fetchMock = mock((url: string, init: RequestInit) => {
     captured.push({
       path: url.replace("https://test", ""),
@@ -37,9 +41,15 @@ beforeEach(async () => {
     const isList =
       init.method === "GET" &&
       (/\/pages$/.test(path) || /\/versions$/.test(path));
-    const body = isList
-      ? { data: [{ id: "p1", title: "X", slug: "x" }] }
-      : { data: { id: "p1", title: "X", slug: "x" } };
+    const isPagePatch = init.method === "PATCH" && /\/api\/v1\/pages\//.test(path);
+    let body: unknown;
+    if (isList) {
+      body = { data: [{ id: "p1", title: "X", slug: "x" }] };
+    } else if (isPagePatch) {
+      body = { data: { id: "p1", title: "X", slug: "x" }, meta: metaForPatch };
+    } else {
+      body = { data: { id: "p1", title: "X", slug: "x" } };
+    }
     return Promise.resolve(new Response(JSON.stringify(body)));
   });
   globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -48,14 +58,15 @@ beforeEach(async () => {
 afterEach(async () => {
   globalThis.fetch = origFetch;
   logSpy.mockRestore();
+  stderrSpy.mockRestore();
   delete process.env["XDG_CONFIG_HOME"];
   delete process.env["SNCB_TOKEN"];
   delete process.env["SNCB_API_URL"];
   await rm(tempHome, { recursive: true, force: true });
 });
 
-async function run(args: string[]): Promise<void> {
-  const cmd = buildPageCommand(() => ({ output: "json" }));
+async function run(args: string[], output: string = "json"): Promise<void> {
+  const cmd = buildPageCommand(() => ({ output }));
   cmd.exitOverride();
   await cmd.parseAsync(args, { from: "user" });
 }
@@ -116,6 +127,41 @@ describe("page update", () => {
     await writeFile(file, "<p>NEW</p>");
     await run(["update", "p1", "-f", file]);
     expect(captured[0]?.body).toEqual({ content: "<p>NEW</p>" });
+  });
+
+  it("prints draft hint to stderr when API reports saved_as=draft (table mode)", async () => {
+    metaForPatch = { saved_as: "draft", needs_publish: true };
+    await run(["update", "p1", "--title", "New"], "table");
+    const wrote = stderrSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+    expect(wrote).toContain("Saved as draft");
+    expect(wrote).toContain("sncb page publish p1");
+  });
+
+  it("does not print draft hint when API reports saved_as=live (table mode)", async () => {
+    metaForPatch = { saved_as: "live", needs_publish: false };
+    await run(["update", "p1", "--title", "New"], "table");
+    const wrote = stderrSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+    expect(wrote).not.toContain("Saved as draft");
+  });
+
+  it("does not print hint in json mode (meta already in body)", async () => {
+    metaForPatch = { saved_as: "draft", needs_publish: true };
+    await run(["update", "p1", "--title", "New"], "json");
+    const wrote = stderrSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+    expect(wrote).not.toContain("Saved as draft");
+    const logged = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n");
+    expect(logged).toContain('"saved_as": "draft"');
+    expect(logged).toContain('"needs_publish": true');
+  });
+
+  it("appends ?publish=true to URL when --publish is passed", async () => {
+    await run(["update", "p1", "--title", "New", "--publish"]);
+    expect(captured[0]?.path).toBe("/api/v1/pages/p1?publish=true");
+  });
+
+  it("omits ?publish from URL by default", async () => {
+    await run(["update", "p1", "--title", "New"]);
+    expect(captured[0]?.path).toBe("/api/v1/pages/p1");
   });
 });
 

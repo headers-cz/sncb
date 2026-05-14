@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { createContext, type GlobalOptions } from "../lib/context.js";
 import { render, type Column } from "../output/render.js";
 import { readContent } from "../lib/io.js";
-import type { Page, PageVersion } from "../api/types.js";
+import type { Page, PageUpdateMeta, PageVersion } from "../api/types.js";
 import { confirm } from "../lib/confirm.js";
 import { recordResponseMetadata } from "../lib/audit.js";
 
@@ -85,26 +85,50 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
 
   page
     .command("update <id>")
-    .description("Update a page (title, slug, or content)")
+    .description(
+      "Update a page (title, slug, or content). Updates to a published " +
+      "page are saved as a draft by default - run `page publish <id>` or " +
+      "pass --publish to make them live immediately.",
+    )
     .option("--title <title>", "New page title")
     .option("--slug <slug>", "New URL slug")
     .option("-f, --file <path>", "Content file or - for stdin")
+    .option(
+      "-p, --publish",
+      "Publish the page after updating (one round-trip)",
+      false,
+    )
     .action(
       async (
         id: string,
-        opts: { title?: string; slug?: string; file?: string },
+        opts: { title?: string; slug?: string; file?: string; publish: boolean },
       ) => {
         const ctx = await createContext(getGlobal());
         const body: Record<string, unknown> = {};
         if (opts.title !== undefined) body["title"] = opts.title;
         if (opts.slug !== undefined) body["slug"] = opts.slug;
         if (opts.file !== undefined) body["content"] = await readContent(opts.file);
-        const item = await ctx.client.request<Page>(`/api/v1/pages/${id}`, {
-          method: "PATCH",
-          body,
+        const path = opts.publish
+          ? `/api/v1/pages/${id}?publish=true`
+          : `/api/v1/pages/${id}`;
+        const { data: item, meta } = await ctx.client.requestWithMeta<Page, PageUpdateMeta>(
+          path,
+          { method: "PATCH", body },
+        );
+        recordResponseMetadata({
+          resourceId: item.id,
+          ...(meta?.saved_as !== undefined ? { savedAs: meta.saved_as } : {}),
         });
-        recordResponseMetadata({ resourceId: item.id });
-        console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
+        if (ctx.format === "json") {
+          console.log(JSON.stringify({ data: item, meta }, null, 2));
+        } else {
+          console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
+          if (meta?.saved_as === "draft") {
+            process.stderr.write(
+              `\x1b[33mSaved as draft. Run \x1b[1msncb page publish ${id}\x1b[22m to make it live, or pass --publish next time.\x1b[0m\n`,
+            );
+          }
+        }
       },
     );
 

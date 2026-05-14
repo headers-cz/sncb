@@ -90,3 +90,14 @@ export interface Health {
   organization_id: string;
   scope: string;
 }
+
+/**
+ * Operation-level metadata returned by PATCH /api/v1/pages/:id. Tells the
+ * caller whether the update wrote to the live page or to a draft that still
+ * needs publishing. A page is published-with-pending-draft when an editor
+ * (in the web UI or via CLI) updated a published page without --publish.
+ */
+export interface PageUpdateMeta {
+  saved_as: "draft" | "live";
+  needs_publish: boolean;
+}

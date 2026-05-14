@@ -51,6 +51,7 @@ export interface AuditEntry {
   error_code?: string;
   items_count?: number;
   resource_id?: string;
+  saved_as?: string;
 }
 
 const STATE_DIR_NAME = "sncb";
@@ -78,6 +79,7 @@ interface InvocationState {
   http?: AuditHttpInfo;
   itemsCount?: number;
   resourceId?: string;
+  savedAs?: string;
 }
 
 let currentInvocation: InvocationState | null = null;
@@ -101,10 +103,12 @@ export function recordHttpCall(info: AuditHttpInfo): void {
 export function recordResponseMetadata(meta: {
   itemsCount?: number;
   resourceId?: string;
+  savedAs?: string;
 }): void {
   if (currentInvocation === null) return;
   if (meta.itemsCount !== undefined) currentInvocation.itemsCount = meta.itemsCount;
   if (meta.resourceId !== undefined) currentInvocation.resourceId = meta.resourceId;
+  if (meta.savedAs !== undefined) currentInvocation.savedAs = meta.savedAs;
 }
 
 export async function endInvocation(
@@ -139,6 +143,7 @@ export async function endInvocation(
   if (errorCode !== undefined) entry.error_code = errorCode;
   if (inv.itemsCount !== undefined) entry.items_count = inv.itemsCount;
   if (inv.resourceId !== undefined) entry.resource_id = inv.resourceId;
+  if (inv.savedAs !== undefined) entry.saved_as = inv.savedAs;
 
   await appendEntry(entry, paths);
 }

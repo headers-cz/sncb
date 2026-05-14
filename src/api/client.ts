@@ -47,10 +47,12 @@ const NO_CONTENT = 204;
 /**
  * REST client for the Seneca API.
  *
- * Wire contract: every successful response is wrapped in `{ data: T }`, every
- * error is `{ error: { code, message, details? } }`. `request<T>` unwraps the
- * envelope and returns `T` directly. `requestRaw` returns the raw envelope
- * for tooling that wants both `data` and pagination metadata when added later.
+ * Wire contract: every successful response is wrapped in
+ * `{ data: T, meta?: M }`, every error is `{ error: { code, message, details? } }`.
+ *
+ * - `request<T>` unwraps `data` and discards `meta` - the common case.
+ * - `requestWithMeta<T, M>` returns `{ data, meta }` for callers that need
+ *   operation-level metadata (e.g. the saved_as field on page updates).
  */
 export class ApiClient {
   private readonly fetchImpl: typeof fetch;
@@ -75,15 +77,30 @@ export class ApiClient {
    * undefined for 204 No Content responses.
    */
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    const wrapped = await this.requestRaw<T>(path, options);
-    return wrapped as T;
+    const envelope = await this.fetchAndParse(path, options);
+    if (envelope === undefined) return undefined as T;
+    return envelope.data as T;
   }
 
   /**
-   * Execute a request and return the raw response envelope `{ data: T }` or
-   * undefined for 204. Most callers want `request<T>` instead.
+   * Execute a request and return the full envelope as `{ data, meta }`. Use
+   * this when the route exposes operation metadata (e.g. PATCH /pages/:id
+   * returns `meta.saved_as` to tell you whether the write hit live or draft).
+   * Returns `{ data: undefined, meta: undefined }` for 204 No Content.
    */
-  async requestRaw<T>(path: string, options: RequestOptions = {}): Promise<T | undefined> {
+  async requestWithMeta<T, M = Record<string, unknown>>(
+    path: string,
+    options: RequestOptions = {},
+  ): Promise<{ data: T; meta: M | undefined }> {
+    const envelope = await this.fetchAndParse(path, options);
+    if (envelope === undefined) return { data: undefined as T, meta: undefined };
+    return { data: envelope.data as T, meta: envelope.meta as M | undefined };
+  }
+
+  private async fetchAndParse(
+    path: string,
+    options: RequestOptions,
+  ): Promise<{ data: unknown; meta: unknown } | undefined> {
     if (!this.token) throw new AuthRequiredError();
     const url = this.buildUrl(path, options.query);
     const method = options.method ?? "GET";
@@ -121,7 +138,7 @@ export class ApiClient {
       durationMs,
     });
 
-    return this.parseResponse<T>(res);
+    return this.parseResponse(res);
   }
 
   private buildUrl(path: string, query?: RequestOptions["query"]): string {
@@ -135,22 +152,27 @@ export class ApiClient {
     return url.toString();
   }
 
-  private async parseResponse<T>(res: Response): Promise<T | undefined> {
+  private async parseResponse(
+    res: Response,
+  ): Promise<{ data: unknown; meta: unknown } | undefined> {
     if (res.status === NO_CONTENT) return undefined;
 
     const text = await res.text();
-    const data = text.length > 0 ? safeJsonParse(text) : undefined;
+    const parsed = text.length > 0 ? safeJsonParse(text) : undefined;
 
     if (!res.ok) {
-      const { code, message, details } = parseErrorBody(res.status, data);
+      const { code, message, details } = parseErrorBody(res.status, parsed);
       throw new ApiError(res.status, code, message, details);
     }
 
-    if (data && typeof data === "object" && "data" in data) {
-      return (data as { data: T }).data;
+    if (parsed && typeof parsed === "object" && "data" in parsed) {
+      const obj = parsed as { data: unknown; meta?: unknown };
+      return { data: obj.data, meta: obj.meta };
     }
 
-    return data as T;
+    // Tolerate non-enveloped success bodies (defensive; production routes
+    // always envelope, but legacy or external callers may not).
+    return { data: parsed, meta: undefined };
   }
 }
 
