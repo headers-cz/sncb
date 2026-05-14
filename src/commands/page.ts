@@ -52,12 +52,22 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
 
   page
     .command("create")
-    .description("Create a page")
+    .description("Create a page (optionally publish it in the same call)")
     .requiredOption("--website <id>", "Parent website id")
     .requiredOption("--title <title>", "Page title")
     .requiredOption("--slug <slug>", "URL slug (lowercase, hyphens)")
     .option("--parent <id>", "Parent page id (folder)")
     .option("-f, --file <path>", "Content file (HTML/Markdown) or - for stdin")
+    .option(
+      "-p, --publish",
+      "Publish the page immediately after create",
+      false,
+    )
+    .option(
+      "-q, --quiet",
+      "Print only the new page id on stdout (scriptable)",
+      false,
+    )
     .action(
       async (opts: {
         website: string;
@@ -65,10 +75,12 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
         slug: string;
         parent?: string;
         file?: string;
+        publish: boolean;
+        quiet: boolean;
       }) => {
         const ctx = await createContext(getGlobal());
         const content = opts.file !== undefined ? await readContent(opts.file) : undefined;
-        const item = await ctx.client.request<Page>(
+        let item = await ctx.client.request<Page>(
           `/api/v1/websites/${opts.website}/pages`,
           {
             method: "POST",
@@ -80,8 +92,18 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
             },
           },
         );
+        if (opts.publish) {
+          item = await ctx.client.request<Page>(
+            `/api/v1/pages/${item.id}/publish`,
+            { method: "POST" },
+          );
+        }
         recordResponseMetadata({ resourceId: item.id });
-        console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
+        if (opts.quiet) {
+          console.log(item.id);
+        } else {
+          console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
+        }
       },
     );
 
@@ -222,6 +244,40 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
       );
       recordResponseMetadata({ resourceId: item.id });
       console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
+    });
+
+  page
+    .command("find")
+    .description(
+      "Look up a page by slug within a website. Useful when you know the " +
+      "URL slug but not the UUID. Returns the same shape as `page get`.",
+    )
+    .requiredOption("--website <id>", "Website id to search in")
+    .requiredOption("--slug <slug>", "Page slug to match")
+    .option(
+      "-q, --quiet",
+      "Print only the matching page id on stdout (scriptable)",
+      false,
+    )
+    .action(async (opts: { website: string; slug: string; quiet: boolean }) => {
+      const ctx = await createContext(getGlobal());
+      const pages = await ctx.client.request<Page[]>(
+        `/api/v1/websites/${opts.website}/pages`,
+      );
+      const hit = pages.find((p) => p.slug === opts.slug);
+      if (!hit) {
+        process.stderr.write(
+          `\x1b[33mNo page with slug '${opts.slug}' on website ${opts.website}.\x1b[0m\n`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      recordResponseMetadata({ resourceId: hit.id });
+      if (opts.quiet) {
+        console.log(hit.id);
+      } else {
+        console.log(render({ format: ctx.format, data: hit, columns: PAGE_COLUMNS }));
+      }
     });
 
   page.addCommand(buildPageDraftCommand(getGlobal));

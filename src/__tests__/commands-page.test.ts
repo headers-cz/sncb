@@ -351,3 +351,86 @@ describe("page draft publish (alias)", () => {
     expect(publishCall).toBeDefined();
   });
 });
+
+describe("page create --publish + --quiet", () => {
+  it("with --publish issues a POST to /publish after creation", async () => {
+    const file = join(tempHome, "p.html");
+    await writeFile(file, "<p>hi</p>");
+    await run([
+      "create", "--website", "w1",
+      "--title", "T", "--slug", "t",
+      "-f", file, "--publish",
+    ], "table");
+    const createCall = captured.find((c) => c.method === "POST" && c.path === "/api/v1/websites/w1/pages");
+    const publishCall = captured.find((c) => c.method === "POST" && c.path === "/api/v1/pages/p1/publish");
+    expect(createCall).toBeDefined();
+    expect(publishCall).toBeDefined();
+  });
+
+  it("with --quiet prints only the page id on stdout", async () => {
+    const file = join(tempHome, "p.html");
+    await writeFile(file, "<p>hi</p>");
+    await run([
+      "create", "--website", "w1",
+      "--title", "T", "--slug", "t",
+      "-f", file, "--quiet",
+    ], "table");
+    const logged = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n");
+    // The id is "p1" from the mock; assert it stands alone (no table rendering).
+    expect(logged.trim()).toBe("p1");
+  });
+
+  it("without --quiet renders the full page table", async () => {
+    const file = join(tempHome, "p.html");
+    await writeFile(file, "<p>hi</p>");
+    await run([
+      "create", "--website", "w1",
+      "--title", "T", "--slug", "t",
+      "-f", file,
+    ], "table");
+    const logged = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n");
+    expect(logged).toContain("ID");
+    expect(logged).toContain("TITLE");
+  });
+});
+
+describe("page find --slug --website", () => {
+  it("returns the page when slug matches one of the website's pages", async () => {
+    globalThis.fetch = (mock(async (_url: string, _init: RequestInit) => {
+      return new Response(
+        JSON.stringify({
+          data: [
+            { id: "match-id", title: "Match", slug: "needle", has_draft: false },
+            { id: "other", title: "Other", slug: "other", has_draft: false },
+          ],
+        }),
+      );
+    }) as unknown) as typeof fetch;
+    await run(["find", "--website", "w1", "--slug", "needle"], "table");
+    const logged = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n");
+    expect(logged).toContain("match-id");
+    expect(logged).not.toContain("other");
+  });
+
+  it("prints stderr hint when no page matches the slug", async () => {
+    globalThis.fetch = (mock(async (_url: string, _init: RequestInit) => {
+      return new Response(JSON.stringify({ data: [] }));
+    }) as unknown) as typeof fetch;
+    await run(["find", "--website", "w1", "--slug", "missing"], "table");
+    const wrote = stderrSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+    expect(wrote).toContain("No page with slug");
+  });
+
+  it("with --quiet prints only the matched id on stdout", async () => {
+    globalThis.fetch = (mock(async (_url: string, _init: RequestInit) => {
+      return new Response(
+        JSON.stringify({
+          data: [{ id: "abc", title: "X", slug: "needle", has_draft: false }],
+        }),
+      );
+    }) as unknown) as typeof fetch;
+    await run(["find", "--website", "w1", "--slug", "needle", "--quiet"], "table");
+    const logged = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n");
+    expect(logged.trim()).toBe("abc");
+  });
+});
