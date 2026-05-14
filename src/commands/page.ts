@@ -3,6 +3,8 @@ import { createContext, type GlobalOptions } from "../lib/context.js";
 import { render, type Column } from "../output/render.js";
 import { readContent } from "../lib/io.js";
 import type { Page, PageVersion } from "../api/types.js";
+import { confirm } from "../lib/confirm.js";
+import { recordResponseMetadata } from "../lib/audit.js";
 
 const PAGE_COLUMNS: Column<Page>[] = [
   { header: "ID", value: (p) => p.id },
@@ -32,6 +34,7 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
       const items = await ctx.client.request<Page[]>(
         `/api/v1/websites/${websiteId}/pages`,
       );
+      recordResponseMetadata({ itemsCount: items.length });
       console.log(render({ format: ctx.format, data: items, columns: PAGE_COLUMNS }));
     });
 
@@ -41,6 +44,7 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
     .action(async (id: string) => {
       const ctx = await createContext(getGlobal());
       const item = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
+      recordResponseMetadata({ resourceId: item.id });
       console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
     });
 
@@ -74,6 +78,7 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
             },
           },
         );
+        recordResponseMetadata({ resourceId: item.id });
         console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
       },
     );
@@ -98,6 +103,7 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
           method: "PATCH",
           body,
         });
+        recordResponseMetadata({ resourceId: item.id });
         console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
       },
     );
@@ -105,9 +111,28 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
   page
     .command("delete <id>")
     .description("Delete a page")
-    .action(async (id: string) => {
+    .option("-y, --yes", "Skip the confirmation prompt", false)
+    .action(async (id: string, opts: { yes: boolean }) => {
       const ctx = await createContext(getGlobal());
+      let label = id;
+      if (!opts.yes) {
+        try {
+          const pg = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
+          label = `'${pg.title}' (${pg.id})`;
+        } catch {
+          // fall through to id-only prompt; DELETE will surface real error
+        }
+      }
+      const proceed = await confirm({
+        prompt: `Delete page ${label}?`,
+        yes: opts.yes,
+      });
+      if (!proceed) {
+        console.log("Aborted.");
+        return;
+      }
       await ctx.client.request<void>(`/api/v1/pages/${id}`, { method: "DELETE" });
+      recordResponseMetadata({ resourceId: id });
       console.log(`Deleted ${id}.`);
     });
 
@@ -119,6 +144,7 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
       const item = await ctx.client.request<Page>(`/api/v1/pages/${id}/publish`, {
         method: "POST",
       });
+      recordResponseMetadata({ resourceId: item.id });
       console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
     });
 
@@ -130,6 +156,7 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
       const item = await ctx.client.request<Page>(`/api/v1/pages/${id}/unpublish`, {
         method: "POST",
       });
+      recordResponseMetadata({ resourceId: item.id });
       console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
     });
 
@@ -154,6 +181,7 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
       const items = await ctx.client.request<PageVersion[]>(
         `/api/v1/pages/${id}/versions`,
       );
+      recordResponseMetadata({ itemsCount: items.length });
       console.log(render({ format: ctx.format, data: items, columns: VERSION_COLUMNS }));
     });
 
@@ -166,6 +194,7 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
         `/api/v1/pages/${id}/versions/${versionId}/revert`,
         { method: "POST" },
       );
+      recordResponseMetadata({ resourceId: item.id });
       console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
     });
 

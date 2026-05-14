@@ -112,9 +112,13 @@ describe("folder update", () => {
 });
 
 describe("folder delete", () => {
-  it("DELETEs via /pages/<id>", async () => {
-    await run(["delete", "f1"]);
+  it("DELETEs via /pages/<id> when --yes is passed", async () => {
+    await run(["delete", "f1", "--yes"]);
     expect(captured[0]?.path).toBe("/api/v1/pages/f1");
     expect(captured[0]?.method).toBe("DELETE");
+  });
+
+  it("refuses to DELETE in non-TTY without --yes", async () => {
+    await expect(run(["delete", "f1"])).rejects.toThrow(/non-interactive|--yes/);
   });
 });

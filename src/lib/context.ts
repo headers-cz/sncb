@@ -1,6 +1,7 @@
 import { ApiClient } from "../api/client.js";
 import { loadConfig } from "../config/storage.js";
 import type { OutputFormat } from "../output/render.js";
+import { recordHttpCall } from "./audit.js";
 
 export interface GlobalOptions {
   apiUrl?: string;
@@ -24,6 +25,9 @@ export async function createContext(global: GlobalOptions): Promise<CommandConte
     client: new ApiClient({
       apiUrl,
       token,
+      onAudit: ({ method, path, status, durationMs }): void => {
+        recordHttpCall({ method, path, apiUrl, status, durationMs });
+      },
       onRequest: verbose
         ? ({ method, url, bodyBytes }): void => {
             const tag = `\x1b[2m[sncb]\x1b[0m`;

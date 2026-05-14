@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.3.0 (2026-05-14)
+
+### Breaking changes
+
+* `sncb website|page|folder delete <id>` now requires confirmation:
+  * Interactive TTY: prompts `[y/N]` (and fetches the resource name first
+    so you see what you're about to delete).
+  * Non-interactive (pipes, CI, AI agents): refuses unless `-y`/`--yes`
+    is passed. This is a deliberate safety bar against silent deletes by
+    AI agents acting on the user's behalf.
+
+### Features
+
+* **Local audit log** for every sncb invocation.
+  * Path: `$XDG_STATE_HOME/sncb/audit.log` (default
+    `~/.local/state/sncb/audit.log`), JSON Lines format.
+  * Records command, args, flags (token redacted), endpoint, status,
+    duration, outcome, and resource_id/items_count when applicable.
+  * Subcommands: `sncb audit tail [--last N] [--since 1h] [--filter X]
+    [--json]`, `sncb audit path`, `sncb audit clear [--older-than 30d]
+    [-y]`.
+  * Disable per-shell with `SNCB_AUDIT=off` (e.g. inside CI that already
+    captures server-side audit).
+* New `-y, --yes` flag on delete commands skips the confirmation prompt.
+
+### Privacy & safety
+
+* The audit log never persists: API tokens, request bodies, or response
+  bodies. Only structural metadata.
+
+
+
 ## 0.2.0 (2026-05-14)
 
 ### Breaking changes

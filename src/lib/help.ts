@@ -18,7 +18,7 @@ const GROUPS: CommandGroup[] = [
   { title: "Content", commands: ["website", "page", "folder"] },
   { title: "Agent", commands: ["agent"] },
   { title: "Account", commands: ["auth", "health"] },
-  { title: "Tool", commands: ["config", "upgrade", "help"] },
+  { title: "Tool", commands: ["config", "audit", "upgrade", "help"] },
 ];
 
 const COMMAND_COL_WIDTH = 12;

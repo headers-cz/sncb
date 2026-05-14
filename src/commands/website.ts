@@ -3,6 +3,8 @@ import { createContext, type GlobalOptions } from "../lib/context.js";
 import { render, type Column } from "../output/render.js";
 import { readJsonContent } from "../lib/io.js";
 import type { Website, WebsiteDesign } from "../api/types.js";
+import { confirm } from "../lib/confirm.js";
+import { recordResponseMetadata } from "../lib/audit.js";
 
 const WEBSITE_COLUMNS: Column<Website>[] = [
   { header: "ID", value: (w) => w.id },
@@ -21,6 +23,7 @@ export function buildWebsiteCommand(getGlobal: () => GlobalOptions): Command {
     .action(async () => {
       const ctx = await createContext(getGlobal());
       const items = await ctx.client.request<Website[]>("/api/v1/websites");
+      recordResponseMetadata({ itemsCount: items.length });
       console.log(render({ format: ctx.format, data: items, columns: WEBSITE_COLUMNS }));
     });
 
@@ -30,6 +33,7 @@ export function buildWebsiteCommand(getGlobal: () => GlobalOptions): Command {
     .action(async (id: string) => {
       const ctx = await createContext(getGlobal());
       const item = await ctx.client.request<Website>(`/api/v1/websites/${id}`);
+      recordResponseMetadata({ resourceId: item.id });
       console.log(render({ format: ctx.format, data: item, columns: WEBSITE_COLUMNS }));
     });
 
@@ -44,6 +48,7 @@ export function buildWebsiteCommand(getGlobal: () => GlobalOptions): Command {
         method: "POST",
         body: { name: opts.name, url: opts.url ?? null },
       });
+      recordResponseMetadata({ resourceId: item.id });
       console.log(render({ format: ctx.format, data: item, columns: WEBSITE_COLUMNS }));
     });
 
@@ -61,15 +66,36 @@ export function buildWebsiteCommand(getGlobal: () => GlobalOptions): Command {
         method: "PATCH",
         body,
       });
+      recordResponseMetadata({ resourceId: item.id });
       console.log(render({ format: ctx.format, data: item, columns: WEBSITE_COLUMNS }));
     });
 
   website
     .command("delete <id>")
-    .description("Delete a website")
-    .action(async (id: string) => {
+    .description("Delete a website (and ALL its pages, folders, design settings)")
+    .option("-y, --yes", "Skip the confirmation prompt", false)
+    .action(async (id: string, opts: { yes: boolean }) => {
       const ctx = await createContext(getGlobal());
+      let name = id;
+      if (!opts.yes) {
+        try {
+          const w = await ctx.client.request<Website>(`/api/v1/websites/${id}`);
+          name = `'${w.name}' (${w.id})`;
+        } catch {
+          // If we can't fetch (404, no perm), fall through to confirm with id
+          // only; the DELETE call below will surface the real error.
+        }
+      }
+      const proceed = await confirm({
+        prompt: `Delete website ${name}? This permanently removes all its pages, folders, and design.`,
+        yes: opts.yes,
+      });
+      if (!proceed) {
+        console.log("Aborted.");
+        return;
+      }
       await ctx.client.request<void>(`/api/v1/websites/${id}`, { method: "DELETE" });
+      recordResponseMetadata({ resourceId: id });
       console.log(`Deleted ${id}.`);
     });
 

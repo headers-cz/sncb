@@ -108,10 +108,15 @@ describe("website update", () => {
 });
 
 describe("website delete", () => {
-  it("DELETEs by id and prints confirmation", async () => {
-    await run(["delete", "w1"]);
+  it("DELETEs by id and prints confirmation when --yes is passed", async () => {
+    await run(["delete", "w1", "--yes"]);
     expect(captured[0]?.method).toBe("DELETE");
     expect(logs.some((l) => l.includes("Deleted w1"))).toBe(true);
+  });
+
+  it("refuses to DELETE in non-TTY without --yes", async () => {
+    await expect(run(["delete", "w1"])).rejects.toThrow(/non-interactive|--yes/);
+    expect(captured.find((c) => c.method === "DELETE")).toBeUndefined();
   });
 });
 

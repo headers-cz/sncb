@@ -11,10 +11,18 @@ import { buildAgentCommand } from "./commands/agent.js";
 import { buildFolderCommand } from "./commands/folder.js";
 import { buildUpgradeCommand } from "./commands/upgrade.js";
 import { buildConfigCommand } from "./commands/config.js";
+import { buildAuditCommand } from "./commands/audit.js";
 import { ApiError, AuthRequiredError, NetworkError, exitCodeForError } from "./api/errors.js";
+import { ConfirmationRequiredError } from "./lib/confirm.js";
 import type { GlobalOptions } from "./lib/context.js";
 import { runBackgroundUpdateCheck } from "./lib/update-check.js";
 import { renderRootHelp } from "./lib/help.js";
+import {
+  endInvocation,
+  startInvocation,
+  type AuditOutcome,
+} from "./lib/audit.js";
+
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -38,6 +46,7 @@ export function buildProgram(): Command {
   program.addCommand(buildFolderCommand(getGlobal));
   program.addCommand(buildUpgradeCommand({ currentVersion: readVersion() }));
   program.addCommand(buildConfigCommand());
+  program.addCommand(buildAuditCommand());
 
   program.helpInformation = (): string => renderRootHelp(program);
   return program;
@@ -46,13 +55,26 @@ export function buildProgram(): Command {
 export async function runCli(argv: string[]): Promise<number> {
   const program = buildProgram();
   const invokedCommand = argv[2];
+
+  startInvocation({
+    cmd: deriveCommandPath(argv),
+    args: deriveArgs(argv),
+    flags: {},
+  });
+
+  let outcome: AuditOutcome = "ok";
+  let errorCode: string | undefined;
   try {
     await program.parseAsync(argv);
     if (invokedCommand !== "upgrade") {
       await runBackgroundUpdateCheck(readVersion()).catch(() => undefined);
     }
+    await endInvocation(outcome);
     return 0;
   } catch (err) {
+    outcome = err instanceof NetworkError ? "network_error" : "error";
+    errorCode = inferErrorCode(err);
+    await endInvocation(outcome, errorCode);
     renderError(err);
     return exitCodeForError(err);
   }
@@ -60,8 +82,6 @@ export async function runCli(argv: string[]): Promise<number> {
 
 /**
  * Render an error to stderr with an actionable hint when we can infer one.
- * Hints target both humans (immediate next step) and AI agents (machine-
- * readable code surfaced explicitly so callers can branch on it).
  */
 export function renderError(err: unknown): void {
   if (err instanceof ApiError) {
@@ -81,6 +101,11 @@ export function renderError(err: unknown): void {
   }
   if (err instanceof AuthRequiredError) {
     process.stderr.write(`${err.message}\n`);
+    return;
+  }
+  if (err instanceof ConfirmationRequiredError) {
+    process.stderr.write(`${err.message}\n`);
+    process.stderr.write(`  hint: rerun with --yes to confirm.\n`);
     return;
   }
   process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
@@ -112,6 +137,71 @@ function hintForApiError(err: ApiError): string | null {
   }
   return null;
 }
+
+function inferErrorCode(err: unknown): string {
+  if (err instanceof ApiError) return err.code;
+  if (err instanceof NetworkError) return "network_error";
+  if (err instanceof AuthRequiredError) return "not_authenticated";
+  if (err instanceof ConfirmationRequiredError) return "confirmation_required";
+  return "unknown_error";
+}
+
+/**
+ * Best-effort reconstruction of the command path from argv, used for the
+ * audit log. Walks past global flags. Examples:
+ *   ["node","sncb","website","list"]              -> "website list"
+ *   ["node","sncb","-v","page","delete","X"]      -> "page delete"
+ *   ["node","sncb","--json","audit","tail"]       -> "audit tail"
+ */
+function deriveCommandPath(argv: string[]): string {
+  const parts: string[] = [];
+  let i = 2;
+  // Skip global flags
+  while (i < argv.length) {
+    const token = argv[i] ?? "";
+    if (!token.startsWith("-")) break;
+    if (
+      token === "--api-url" ||
+      token === "--token" ||
+      token === "--output" ||
+      token === "-o"
+    ) {
+      i += 2;
+      continue;
+    }
+    i += 1;
+  }
+  // Command + subcommand(s) are non-flag tokens until we hit the first thing
+  // that looks like an argument (UUID-like, file path, dash, or another flag).
+  while (i < argv.length) {
+    const token = argv[i] ?? "";
+    if (token.startsWith("-")) break;
+    if (looksLikeArgument(token)) break;
+    parts.push(token);
+    i += 1;
+    if (parts.length >= 3) break;
+  }
+  return parts.join(" ");
+}
+
+function deriveArgs(argv: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 2; i < argv.length; i++) {
+    const token = argv[i] ?? "";
+    if (token.startsWith("-")) continue;
+    if (out.length === 0 && !looksLikeArgument(token)) continue;
+    out.push(token);
+  }
+  return out;
+}
+
+function looksLikeArgument(token: string): boolean {
+  if (token.length > 30) return true;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(token)) return true;
+  if (token.includes("/") || token.includes(".")) return true;
+  return false;
+}
+
 
 function readVersion(): string {
   try {

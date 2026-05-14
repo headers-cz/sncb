@@ -3,6 +3,7 @@ import { createContext, type GlobalOptions } from "../lib/context.js";
 import { render, type Column } from "../output/render.js";
 import { readJsonContent } from "../lib/io.js";
 import type { Agent } from "../api/types.js";
+import { recordResponseMetadata } from "../lib/audit.js";
 
 const AGENT_COLUMNS: Column<Agent>[] = [
   { header: "ID", value: (a) => a.id },
@@ -21,6 +22,7 @@ export function buildAgentCommand(getGlobal: () => GlobalOptions): Command {
     .action(async () => {
       const ctx = await createContext(getGlobal());
       const items = await ctx.client.request<Agent[]>("/api/v1/agents");
+      recordResponseMetadata({ itemsCount: items.length });
       console.log(render({ format: ctx.format, data: items, columns: AGENT_COLUMNS }));
     });
 
@@ -30,6 +32,7 @@ export function buildAgentCommand(getGlobal: () => GlobalOptions): Command {
     .action(async (id: string) => {
       const ctx = await createContext(getGlobal());
       const item = await ctx.client.request<Agent>(`/api/v1/agents/${id}`);
+      recordResponseMetadata({ resourceId: item.id });
       console.log(render({ format: ctx.format, data: item, columns: AGENT_COLUMNS }));
     });
 
@@ -44,6 +47,7 @@ export function buildAgentCommand(getGlobal: () => GlobalOptions): Command {
         method: "PATCH",
         body,
       });
+      recordResponseMetadata({ resourceId: item.id });
       console.log(render({ format: ctx.format, data: item, columns: AGENT_COLUMNS }));
     });
 

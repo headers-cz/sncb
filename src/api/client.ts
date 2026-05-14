@@ -12,6 +12,8 @@ export interface ApiClientOptions {
   /** Verbose request/response logger (logs to stderr). */
   onRequest?: ((info: RequestLog) => void) | undefined;
   onResponse?: ((info: ResponseLog) => void) | undefined;
+  /** Audit hook (fires once per HTTP call, with parsed path only). */
+  onAudit?: ((info: AuditLog) => void) | undefined;
 }
 
 export interface RequestOptions {
@@ -33,6 +35,13 @@ export interface ResponseLog {
   durationMs: number;
 }
 
+export interface AuditLog {
+  method: string;
+  path: string;
+  status: number;
+  durationMs: number;
+}
+
 const NO_CONTENT = 204;
 
 /**
@@ -49,6 +58,7 @@ export class ApiClient {
   private readonly token: string | null;
   private readonly onRequest?: ((info: RequestLog) => void) | undefined;
   private readonly onResponse?: ((info: ResponseLog) => void) | undefined;
+  private readonly onAudit?: ((info: AuditLog) => void) | undefined;
 
   constructor(opts: ApiClientOptions) {
     this.fetchImpl = opts.fetchImpl ?? fetch;
@@ -56,6 +66,7 @@ export class ApiClient {
     this.token = opts.token;
     this.onRequest = opts.onRequest;
     this.onResponse = opts.onResponse;
+    this.onAudit = opts.onAudit;
   }
 
   /**
@@ -101,11 +112,13 @@ export class ApiClient {
       throw new NetworkError(`Failed to reach ${url}`, err);
     }
 
-    this.onResponse?.({
+    const durationMs = Math.round(performance.now() - startedAt);
+    this.onResponse?.({ method, url, status: res.status, durationMs });
+    this.onAudit?.({
       method,
-      url,
+      path: path.startsWith("/") ? path : `/${path}`,
       status: res.status,
-      durationMs: Math.round(performance.now() - startedAt),
+      durationMs,
     });
 
     return this.parseResponse<T>(res);

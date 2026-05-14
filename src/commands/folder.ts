@@ -2,6 +2,8 @@ import { Command } from "commander";
 import { createContext, type GlobalOptions } from "../lib/context.js";
 import { render, type Column } from "../output/render.js";
 import type { Page } from "../api/types.js";
+import { confirm } from "../lib/confirm.js";
+import { recordResponseMetadata } from "../lib/audit.js";
 
 /**
  * Folders in Seneca are pages with `is_folder: true`. The CLI exposes them
@@ -30,6 +32,7 @@ export function buildFolderCommand(getGlobal: () => GlobalOptions): Command {
       const items = await ctx.client.request<Page[]>(
         `/api/v1/websites/${websiteId}/folders`,
       );
+      recordResponseMetadata({ itemsCount: items.length });
       console.log(render({ format: ctx.format, data: items, columns: FOLDER_COLUMNS }));
     });
 
@@ -39,6 +42,7 @@ export function buildFolderCommand(getGlobal: () => GlobalOptions): Command {
     .action(async (id: string) => {
       const ctx = await createContext(getGlobal());
       const item = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
+      recordResponseMetadata({ resourceId: item.id });
       console.log(render({ format: ctx.format, data: item, columns: FOLDER_COLUMNS }));
     });
 
@@ -68,6 +72,7 @@ export function buildFolderCommand(getGlobal: () => GlobalOptions): Command {
             },
           },
         );
+        recordResponseMetadata({ resourceId: item.id });
         console.log(render({ format: ctx.format, data: item, columns: FOLDER_COLUMNS }));
       },
     );
@@ -86,15 +91,35 @@ export function buildFolderCommand(getGlobal: () => GlobalOptions): Command {
         method: "PATCH",
         body,
       });
+      recordResponseMetadata({ resourceId: item.id });
       console.log(render({ format: ctx.format, data: item, columns: FOLDER_COLUMNS }));
     });
 
   folder
     .command("delete <id>")
-    .description("Delete a folder")
-    .action(async (id: string) => {
+    .description("Delete a folder (and all pages and folders inside it)")
+    .option("-y, --yes", "Skip the confirmation prompt", false)
+    .action(async (id: string, opts: { yes: boolean }) => {
       const ctx = await createContext(getGlobal());
+      let label = id;
+      if (!opts.yes) {
+        try {
+          const f = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
+          label = `'${f.title}' (${f.id})`;
+        } catch {
+          // fall through
+        }
+      }
+      const proceed = await confirm({
+        prompt: `Delete folder ${label}? This removes its children too.`,
+        yes: opts.yes,
+      });
+      if (!proceed) {
+        console.log("Aborted.");
+        return;
+      }
       await ctx.client.request<void>(`/api/v1/pages/${id}`, { method: "DELETE" });
+      recordResponseMetadata({ resourceId: id });
       console.log(`Deleted ${id}.`);
     });
 

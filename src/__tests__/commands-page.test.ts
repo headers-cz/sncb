@@ -120,9 +120,13 @@ describe("page update", () => {
 });
 
 describe("page delete", () => {
-  it("DELETEs by id", async () => {
-    await run(["delete", "p1"]);
+  it("DELETEs by id when --yes is passed", async () => {
+    await run(["delete", "p1", "--yes"]);
     expect(captured[0]?.method).toBe("DELETE");
+  });
+
+  it("refuses to DELETE in non-TTY without --yes", async () => {
+    await expect(run(["delete", "p1"])).rejects.toThrow(/non-interactive|--yes/);
   });
 });
 
