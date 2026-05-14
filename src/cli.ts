@@ -13,6 +13,7 @@ import { buildUpgradeCommand } from "./commands/upgrade.js";
 import { ApiError, AuthRequiredError, NetworkError, exitCodeForError } from "./api/errors.js";
 import type { GlobalOptions } from "./lib/context.js";
 import { runBackgroundUpdateCheck } from "./lib/update-check.js";
+import { renderRootHelp } from "./lib/help.js";
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -34,6 +35,8 @@ export function buildProgram(): Command {
   program.addCommand(buildAgentCommand(getGlobal));
   program.addCommand(buildFolderCommand(getGlobal));
   program.addCommand(buildUpgradeCommand({ currentVersion: readVersion() }));
+
+  program.helpInformation = (): string => renderRootHelp(program);
   return program;
 }
 
