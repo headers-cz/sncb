@@ -6,6 +6,7 @@ import type { Page, PageUpdateMeta, PageVersion } from "../api/types.js";
 import { confirm } from "../lib/confirm.js";
 import { recordResponseMetadata } from "../lib/audit.js";
 import { lineDiff, diffStats, renderDiff } from "../lib/diff.js";
+import { ansi } from "../lib/ansi.js";
 
 const PAGE_COLUMNS: Column<Page>[] = [
   { header: "ID", value: (p) => p.id },
@@ -24,6 +25,33 @@ const VERSION_COLUMNS: Column<PageVersion>[] = [
   { header: "USER", value: (v) => v.user_id ?? "-" },
   { header: "CREATED", value: (v) => v.created_at },
 ];
+
+interface DraftFetchResult {
+  page: Page;
+  hasDraft: boolean;
+}
+
+/**
+ * Fetch a page and signal absence of a draft cleanly. Returns null when the
+ * caller should bail (page has no draft) - in that case the appropriate
+ * format-specific notice has already been emitted.
+ */
+async function fetchPageRequiringDraft(
+  client: { request: <T>(p: string) => Promise<T> },
+  id: string,
+  format: string,
+  extraJson: Record<string, unknown> = {},
+): Promise<DraftFetchResult | null> {
+  const page = await client.request<Page>(`/api/v1/pages/${id}`);
+  recordResponseMetadata({ resourceId: page.id });
+  if (page.has_draft) return { page, hasDraft: true };
+  if (format === "json") {
+    console.log(JSON.stringify({ has_draft: false, ...extraJson }, null, 2));
+  } else {
+    process.stderr.write(`${ansi.yellow(`No pending draft for page ${id}.`)}\n`);
+  }
+  return null;
+}
 
 export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
   const page = new Command("page").description("Manage pages");
@@ -110,48 +138,40 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
   page
     .command("update <id>")
     .description(
-      "Update a page (title, slug, or content). Updates to a published " +
-      "page are saved as a draft by default - run `page publish <id>` or " +
-      "pass --publish to make them live immediately.",
+      "Update a page. Saved as draft for published pages unless --publish.",
     )
     .option("--title <title>", "New page title")
     .option("--slug <slug>", "New URL slug")
     .option("-f, --file <path>", "Content file or - for stdin")
-    .option(
-      "-p, --publish",
-      "Publish the page after updating (one round-trip)",
-      false,
-    )
+    .option("-p, --publish", "Publish the page after updating (one round-trip)")
     .action(
       async (
         id: string,
-        opts: { title?: string; slug?: string; file?: string; publish: boolean },
+        opts: { title?: string; slug?: string; file?: string; publish?: boolean },
       ) => {
         const ctx = await createContext(getGlobal());
         const body: Record<string, unknown> = {};
         if (opts.title !== undefined) body["title"] = opts.title;
         if (opts.slug !== undefined) body["slug"] = opts.slug;
         if (opts.file !== undefined) body["content"] = await readContent(opts.file);
-        const path = opts.publish
-          ? `/api/v1/pages/${id}?publish=true`
-          : `/api/v1/pages/${id}`;
         const { data: item, meta } = await ctx.client.requestWithMeta<Page, PageUpdateMeta>(
-          path,
-          { method: "PATCH", body },
+          `/api/v1/pages/${id}`,
+          {
+            method: "PATCH",
+            body,
+            ...(opts.publish ? { query: { publish: "true" } } : {}),
+          },
         );
         recordResponseMetadata({
           resourceId: item.id,
           ...(meta?.saved_as !== undefined ? { savedAs: meta.saved_as } : {}),
         });
-        if (ctx.format === "json") {
-          console.log(JSON.stringify({ data: item, meta }, null, 2));
-        } else {
-          console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
-          if (meta?.saved_as === "draft") {
-            process.stderr.write(
-              `\x1b[33mSaved as draft. Run \x1b[1msncb page publish ${id}\x1b[22m to make it live, or pass --publish next time.\x1b[0m\n`,
-            );
-          }
+        const payload = meta ? { ...item, _meta: meta } : item;
+        console.log(render({ format: ctx.format, data: payload, columns: PAGE_COLUMNS }));
+        if (ctx.format !== "json" && meta?.saved_as === "draft") {
+          process.stderr.write(
+            `${ansi.yellow(`Saved as draft. Run ${ansi.bold(`sncb page publish ${id}`)} to make it live, or pass --publish next time.`)}\n`,
+          );
         }
       },
     );
@@ -267,7 +287,7 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
       const hit = pages.find((p) => p.slug === opts.slug);
       if (!hit) {
         process.stderr.write(
-          `\x1b[33mNo page with slug '${opts.slug}' on website ${opts.website}.\x1b[0m\n`,
+          `${ansi.yellow(`No page with slug '${opts.slug}' on website ${opts.website}.`)}\n`,
         );
         process.exitCode = 1;
         return;
@@ -313,65 +333,48 @@ function buildPageDraftCommand(getGlobal: () => GlobalOptions): Command {
     .description("Show the draft title and content of a page")
     .action(async (id: string) => {
       const ctx = await createContext(getGlobal());
-      const item = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
-      recordResponseMetadata({ resourceId: item.id });
-      if (!item.has_draft) {
-        if (ctx.format === "json") {
-          console.log(JSON.stringify({ has_draft: false }, null, 2));
-        } else {
-          process.stderr.write(
-            `\x1b[33mNo pending draft for page ${id}.\x1b[0m\n`,
-          );
-        }
+      const result = await fetchPageRequiringDraft(ctx.client, id, ctx.format);
+      if (!result) return;
+      const { page: item } = result;
+      if (ctx.format === "json") {
+        console.log(
+          JSON.stringify(
+            {
+              page_id: item.id,
+              draft_title: item.draft_title,
+              draft_content: item.draft_content,
+            },
+            null,
+            2,
+          ),
+        );
         return;
       }
-      const payload = {
-        page_id: item.id,
-        draft_title: item.draft_title,
-        draft_content: item.draft_content,
-      };
-      if (ctx.format === "json") {
-        console.log(JSON.stringify(payload, null, 2));
-      } else {
-        console.log(`Draft title: ${item.draft_title ?? "(unchanged)"}`);
-        console.log("Draft content:");
-        console.log(item.draft_content ?? "(unchanged)");
-      }
+      console.log(`Draft title: ${item.draft_title ?? "(unchanged)"}`);
+      console.log("Draft content:");
+      console.log(item.draft_content ?? "(unchanged)");
     });
 
   draft
     .command("diff <id>")
     .description("Show the difference between live content and draft content")
-    .option("--no-color", "Disable ANSI colour output", false)
+    .option("--no-color", "Disable ANSI colour output")
     .option("--context <n>", "Lines of unchanged context around changes", "3")
     .action(
       async (
         id: string,
-        opts: { color: boolean; context: string },
+        opts: { color?: boolean; context: string },
       ) => {
         const ctx = await createContext(getGlobal());
-        const item = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
-        recordResponseMetadata({ resourceId: item.id });
-        if (!item.has_draft) {
-          if (ctx.format === "json") {
-            console.log(
-              JSON.stringify({ has_draft: false, hunks: [] }, null, 2),
-            );
-          } else {
-            process.stderr.write(
-              `\x1b[33mNo pending draft for page ${id}.\x1b[0m\n`,
-            );
-          }
-          return;
-        }
+        const result = await fetchPageRequiringDraft(ctx.client, id, ctx.format, {
+          hunks: [],
+        });
+        if (!result) return;
+        const { page: item } = result;
         const liveTitle = item.title;
         const draftTitle = item.draft_title ?? item.title;
-        const liveContent = item.content;
-        const draftContent = item.draft_content ?? item.content;
-        const hunks = lineDiff(liveContent, draftContent);
+        const hunks = lineDiff(item.content, item.draft_content ?? item.content);
         const stats = diffStats(hunks);
-        const useColor = opts.color !== false && process.stdout.isTTY === true;
-        const contextN = Number.parseInt(opts.context, 10);
         if (ctx.format === "json") {
           console.log(
             JSON.stringify(
@@ -394,6 +397,8 @@ function buildPageDraftCommand(getGlobal: () => GlobalOptions): Command {
           `Content: +${stats.added} -${stats.removed} (${stats.kept} unchanged)`,
         );
         if (stats.added === 0 && stats.removed === 0) return;
+        const useColor = opts.color !== false && process.stdout.isTTY === true;
+        const contextN = Number.parseInt(opts.context, 10);
         console.log(
           renderDiff(hunks, {
             color: useColor,
@@ -406,27 +411,27 @@ function buildPageDraftCommand(getGlobal: () => GlobalOptions): Command {
   draft
     .command("discard <id>")
     .description("Drop the pending draft, keep live content untouched")
-    .option("-y, --yes", "Skip the confirmation prompt", false)
-    .action(async (id: string, opts: { yes: boolean }) => {
+    .option("-y, --yes", "Skip the confirmation prompt")
+    .action(async (id: string, opts: { yes?: boolean }) => {
       const ctx = await createContext(getGlobal());
       let label = id;
+      // Pre-flight GET on interactive path: needed to (a) show the page title
+      // in the confirm prompt and (b) short-circuit cleanly when there is no
+      // draft to discard. Skipped when --yes (scripting path) to keep that
+      // case to a single round-trip.
       if (!opts.yes) {
-        try {
-          const pg = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
-          label = `'${pg.title}' (${pg.id})`;
-          if (!pg.has_draft) {
-            process.stderr.write(
-              `\x1b[33mNo pending draft for ${label}. Nothing to discard.\x1b[0m\n`,
-            );
-            return;
-          }
-        } catch {
-          // fall through; DELETE will surface the real error
+        const pg = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
+        label = `'${pg.title}' (${pg.id})`;
+        if (!pg.has_draft) {
+          process.stderr.write(
+            `${ansi.yellow(`No pending draft for ${label}. Nothing to discard.`)}\n`,
+          );
+          return;
         }
       }
       const proceed = await confirm({
         prompt: `Discard draft of page ${label}? Live content will be kept.`,
-        yes: opts.yes,
+        yes: opts.yes ?? false,
       });
       if (!proceed) {
         console.log("Aborted.");

@@ -1,13 +1,5 @@
 import type { Command } from "commander";
-
-const useColor = process.stdout.isTTY && !process.env["NO_COLOR"];
-
-const ansi = {
-  bold: (s: string): string => (useColor ? `\x1b[1m${s}\x1b[0m` : s),
-  dim: (s: string): string => (useColor ? `\x1b[2m${s}\x1b[0m` : s),
-  cyan: (s: string): string => (useColor ? `\x1b[36m${s}\x1b[0m` : s),
-  yellow: (s: string): string => (useColor ? `\x1b[33m${s}\x1b[0m` : s),
-};
+import { ansi } from "./ansi.js";
 
 interface CommandGroup {
   title: string;
