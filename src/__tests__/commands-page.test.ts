@@ -17,6 +17,7 @@ let origFetch: typeof fetch;
 let logSpy: ReturnType<typeof spyOn>;
 let stderrSpy: ReturnType<typeof spyOn>;
 let metaForPatch: { saved_as: "draft" | "live"; needs_publish: boolean } = { saved_as: "live", needs_publish: false };
+let pageGetExtras: Record<string, unknown> = {};
 
 beforeEach(async () => {
   tempHome = await mkdtemp(join(tmpdir(), "sncb-page-"));
@@ -28,6 +29,7 @@ beforeEach(async () => {
   logSpy = spyOn(console, "log").mockImplementation(() => undefined);
   stderrSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
   metaForPatch = { saved_as: "live", needs_publish: false };
+  pageGetExtras = {};
   fetchMock = mock((url: string, init: RequestInit) => {
     captured.push({
       path: url.replace("https://test", ""),
@@ -35,6 +37,16 @@ beforeEach(async () => {
       body: init.body ? JSON.parse(init.body as string) : undefined,
     });
     if (init.method === "DELETE") {
+      const path = url.replace("https://test", "");
+      if (path.endsWith("/draft")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: { id: "p1", title: "X", slug: "x", has_draft: false },
+            }),
+          ),
+        );
+      }
       return Promise.resolve(new Response(null, { status: 204 }));
     }
     const path = url.replace("https://test", "");
@@ -44,11 +56,15 @@ beforeEach(async () => {
     const isPagePatch = init.method === "PATCH" && /\/api\/v1\/pages\//.test(path);
     let body: unknown;
     if (isList) {
-      body = { data: [{ id: "p1", title: "X", slug: "x" }] };
+      body = {
+        data: [
+          { id: "p1", title: "X", slug: "x", ...pageGetExtras },
+        ],
+      };
     } else if (isPagePatch) {
-      body = { data: { id: "p1", title: "X", slug: "x" }, meta: metaForPatch };
+      body = { data: { id: "p1", title: "X", slug: "x", ...pageGetExtras }, meta: metaForPatch };
     } else {
-      body = { data: { id: "p1", title: "X", slug: "x" } };
+      body = { data: { id: "p1", title: "X", slug: "x", ...pageGetExtras } };
     }
     return Promise.resolve(new Response(JSON.stringify(body)));
   });
@@ -215,5 +231,123 @@ describe("page revert", () => {
     await run(["revert", "p1", "v1"]);
     expect(captured[0]?.path).toBe("/api/v1/pages/p1/versions/v1/revert");
     expect(captured[0]?.method).toBe("POST");
+  });
+});
+
+describe("page list DRAFT column", () => {
+  it("renders DRAFT yes when has_draft is true", async () => {
+    pageGetExtras = { has_draft: true };
+    await run(["list", "w1"], "table");
+    const out = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n");
+    expect(out).toContain("DRAFT");
+    expect(out).toContain("yes");
+  });
+});
+
+describe("page draft ls", () => {
+  it("requests pages and filters to ones with a draft", async () => {
+    // Override fetch to return a multi-page list mixing has_draft true/false
+    globalThis.fetch = (mock(async (_url: string, _init: RequestInit) => {
+      return new Response(
+        JSON.stringify({
+          data: [
+            { id: "p1", title: "Has draft", slug: "a", has_draft: true },
+            { id: "p2", title: "Clean", slug: "b", has_draft: false },
+          ],
+        }),
+      );
+    }) as unknown) as typeof fetch;
+    await run(["draft", "ls", "w1"], "table");
+    const out = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n");
+    expect(out).toContain("Has draft");
+    expect(out).not.toContain("Clean");
+  });
+});
+
+describe("page draft show", () => {
+  it("prints stderr hint when page has no draft (table mode)", async () => {
+    pageGetExtras = { has_draft: false };
+    await run(["draft", "show", "p1"], "table");
+    const wrote = stderrSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+    expect(wrote).toContain("No pending draft");
+  });
+
+  it("returns { has_draft: false } in JSON mode when no draft", async () => {
+    pageGetExtras = { has_draft: false };
+    await run(["draft", "show", "p1"], "json");
+    const logged = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+    expect(logged).toContain('"has_draft": false');
+  });
+
+  it("renders draft content in table mode when draft exists", async () => {
+    pageGetExtras = {
+      has_draft: true,
+      draft_title: "Drafted",
+      draft_content: "<p>draft body</p>",
+    };
+    await run(["draft", "show", "p1"], "table");
+    const logged = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n");
+    expect(logged).toContain("Drafted");
+    expect(logged).toContain("draft body");
+  });
+});
+
+describe("page draft diff", () => {
+  it("emits hunks + stats in JSON mode", async () => {
+    pageGetExtras = {
+      has_draft: true,
+      content: "line1\nline2\nline3",
+      draft_content: "line1\nCHANGED\nline3",
+      draft_title: null,
+    };
+    await run(["draft", "diff", "p1"], "json");
+    const logged = logSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+    const parsed = JSON.parse(logged) as {
+      stats: { added: number; removed: number };
+      hunks: Array<{ op: string; line: string }>;
+    };
+    expect(parsed.stats.added).toBe(1);
+    expect(parsed.stats.removed).toBe(1);
+    expect(parsed.hunks.some((h) => h.op === "add" && h.line === "CHANGED")).toBe(true);
+    expect(parsed.hunks.some((h) => h.op === "remove" && h.line === "line2")).toBe(true);
+  });
+
+  it("reports no draft cleanly when has_draft=false", async () => {
+    pageGetExtras = { has_draft: false };
+    await run(["draft", "diff", "p1"], "table");
+    const wrote = stderrSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+    expect(wrote).toContain("No pending draft");
+  });
+});
+
+describe("page draft discard", () => {
+  it("DELETEs /pages/:id/draft when --yes passed", async () => {
+    pageGetExtras = { has_draft: true };
+    await run(["draft", "discard", "p1", "--yes"], "table");
+    const discardCall = captured.find((c) => c.method === "DELETE" && c.path === "/api/v1/pages/p1/draft");
+    expect(discardCall).toBeDefined();
+  });
+
+  it("refuses to discard in non-TTY without --yes", async () => {
+    pageGetExtras = { has_draft: true };
+    await expect(run(["draft", "discard", "p1"], "table")).rejects.toThrow(
+      /non-interactive|--yes/,
+    );
+  });
+
+  it("short-circuits with a hint when page has no draft (no DELETE issued)", async () => {
+    pageGetExtras = { has_draft: false };
+    await run(["draft", "discard", "p1"], "table");
+    expect(captured.some((c) => c.method === "DELETE")).toBe(false);
+    const wrote = stderrSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("");
+    expect(wrote).toContain("Nothing to discard");
+  });
+});
+
+describe("page draft publish (alias)", () => {
+  it("POSTs to /pages/:id/publish (same as `page publish`)", async () => {
+    await run(["draft", "publish", "p1"], "table");
+    const publishCall = captured.find((c) => c.method === "POST" && c.path === "/api/v1/pages/p1/publish");
+    expect(publishCall).toBeDefined();
   });
 });
