@@ -8,15 +8,17 @@ const PAGE_COLUMNS: Column<Page>[] = [
   { header: "ID", value: (p) => p.id },
   { header: "TITLE", value: (p) => p.title },
   { header: "SLUG", value: (p) => p.slug },
-  { header: "STATUS", value: (p) => p.status },
-  { header: "FOLDER", value: (p) => p.folder_id ?? "-" },
+  { header: "PUBLISHED", value: (p) => (p.published ? "yes" : "no") },
+  { header: "FOLDER", value: (p) => (p.is_folder ? "yes" : "no") },
+  { header: "PARENT", value: (p) => p.parent_id ?? "-" },
   { header: "UPDATED", value: (p) => p.updated_at },
 ];
 
 const VERSION_COLUMNS: Column<PageVersion>[] = [
-  { header: "VERSION", value: (v) => String(v.version) },
+  { header: "ID", value: (v) => v.id },
+  { header: "TITLE", value: (v) => v.title },
+  { header: "USER", value: (v) => v.user_id ?? "-" },
   { header: "CREATED", value: (v) => v.created_at },
-  { header: "BY", value: (v) => v.created_by ?? "-" },
 ];
 
 export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
@@ -35,7 +37,7 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
 
   page
     .command("get <id>")
-    .description("Show page metadata")
+    .description("Show page metadata and content")
     .action(async (id: string) => {
       const ctx = await createContext(getGlobal());
       const item = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
@@ -44,22 +46,22 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
 
   page
     .command("create")
-    .description("Create a page (HTML body via -f or stdin)")
+    .description("Create a page")
     .requiredOption("--website <id>", "Parent website id")
     .requiredOption("--title <title>", "Page title")
-    .requiredOption("--slug <slug>", "URL slug")
-    .option("--folder <id>", "Folder id")
-    .option("-f, --file <path>", "HTML file or - for stdin")
+    .requiredOption("--slug <slug>", "URL slug (lowercase, hyphens)")
+    .option("--parent <id>", "Parent page id (folder)")
+    .option("-f, --file <path>", "Content file (HTML/Markdown) or - for stdin")
     .action(
       async (opts: {
         website: string;
         title: string;
         slug: string;
-        folder?: string;
+        parent?: string;
         file?: string;
       }) => {
         const ctx = await createContext(getGlobal());
-        const content = await readContent(opts.file);
+        const content = opts.file !== undefined ? await readContent(opts.file) : undefined;
         const item = await ctx.client.request<Page>(
           `/api/v1/websites/${opts.website}/pages`,
           {
@@ -67,8 +69,8 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
             body: {
               title: opts.title,
               slug: opts.slug,
-              folder_id: opts.folder ?? null,
               content,
+              parentId: opts.parent ?? null,
             },
           },
         );
@@ -78,12 +80,15 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
 
   page
     .command("update <id>")
-    .description("Update a page")
-    .option("--title <title>")
-    .option("--slug <slug>")
-    .option("-f, --file <path>", "New HTML body from file or - for stdin")
+    .description("Update a page (title, slug, or content)")
+    .option("--title <title>", "New page title")
+    .option("--slug <slug>", "New URL slug")
+    .option("-f, --file <path>", "Content file or - for stdin")
     .action(
-      async (id: string, opts: { title?: string; slug?: string; file?: string }) => {
+      async (
+        id: string,
+        opts: { title?: string; slug?: string; file?: string },
+      ) => {
         const ctx = await createContext(getGlobal());
         const body: Record<string, unknown> = {};
         if (opts.title !== undefined) body["title"] = opts.title;
@@ -108,7 +113,7 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
 
   page
     .command("publish <id>")
-    .description("Publish a page")
+    .description("Publish a page (make it public)")
     .action(async (id: string) => {
       const ctx = await createContext(getGlobal());
       const item = await ctx.client.request<Page>(`/api/v1/pages/${id}/publish`, {
@@ -118,27 +123,50 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
     });
 
   page
-    .command("move <id>")
-    .description("Move a page to another folder")
-    .requiredOption("--folder <id>", "Target folder id (or empty string for root)")
-    .action(async (id: string, opts: { folder: string }) => {
+    .command("unpublish <id>")
+    .description("Unpublish a page (revert to draft)")
+    .action(async (id: string) => {
       const ctx = await createContext(getGlobal());
-      const item = await ctx.client.request<Page>(`/api/v1/pages/${id}/move`, {
+      const item = await ctx.client.request<Page>(`/api/v1/pages/${id}/unpublish`, {
         method: "POST",
-        body: { folder_id: opts.folder === "" ? null : opts.folder },
       });
       console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
     });
 
   page
+    .command("move <id>")
+    .description("Move a page under a different parent (folder)")
+    .option("--parent <id>", "New parent page id (omit to move to root)")
+    .action(async (id: string, opts: { parent?: string }) => {
+      const ctx = await createContext(getGlobal());
+      await ctx.client.request<void>(`/api/v1/pages/${id}/move`, {
+        method: "POST",
+        body: { newParentId: opts.parent ?? null },
+      });
+      console.log(`Moved ${id}.`);
+    });
+
+  page
     .command("versions <id>")
-    .description("List page versions")
+    .description("List versions of a page")
     .action(async (id: string) => {
       const ctx = await createContext(getGlobal());
       const items = await ctx.client.request<PageVersion[]>(
         `/api/v1/pages/${id}/versions`,
       );
       console.log(render({ format: ctx.format, data: items, columns: VERSION_COLUMNS }));
+    });
+
+  page
+    .command("revert <id> <version-id>")
+    .description("Revert a page to a previous version")
+    .action(async (id: string, versionId: string) => {
+      const ctx = await createContext(getGlobal());
+      const item = await ctx.client.request<Page>(
+        `/api/v1/pages/${id}/versions/${versionId}/revert`,
+        { method: "POST" },
+      );
+      console.log(render({ format: ctx.format, data: item, columns: PAGE_COLUMNS }));
     });
 
   return page;

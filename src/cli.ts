@@ -25,7 +25,8 @@ export function buildProgram(): Command {
     .option("--api-url <url>", "Override API base URL")
     .option("--token <token>", "Override API token")
     .option("-o, --output <format>", "Output format: table | json | yaml", "table")
-    .option("--json", "Shortcut for --output json", false);
+    .option("--json", "Shortcut for --output json", false)
+    .option("-v, --verbose", "Log every HTTP request and response to stderr", false);
 
   const getGlobal = (): GlobalOptions => program.opts<GlobalOptions>();
 
@@ -57,13 +58,25 @@ export async function runCli(argv: string[]): Promise<number> {
   }
 }
 
-function renderError(err: unknown): void {
+/**
+ * Render an error to stderr with an actionable hint when we can infer one.
+ * Hints target both humans (immediate next step) and AI agents (machine-
+ * readable code surfaced explicitly so callers can branch on it).
+ */
+export function renderError(err: unknown): void {
   if (err instanceof ApiError) {
-    process.stderr.write(`API error (${err.status} ${err.code}): ${err.message}\n`);
+    process.stderr.write(
+      `API error (${err.status} ${err.code}): ${err.message}\n`,
+    );
+    const hint = hintForApiError(err);
+    if (hint) process.stderr.write(`  hint: ${hint}\n`);
     return;
   }
   if (err instanceof NetworkError) {
     process.stderr.write(`Network error: ${err.message}\n`);
+    process.stderr.write(
+      `  hint: check 'sncb config get apiUrl' and your internet connection\n`,
+    );
     return;
   }
   if (err instanceof AuthRequiredError) {
@@ -71,6 +84,33 @@ function renderError(err: unknown): void {
     return;
   }
   process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+}
+
+function hintForApiError(err: ApiError): string | null {
+  if (err.code === "invalid_token") {
+    return "your token is missing or rejected by the server. Run 'sncb auth login' or pass --token.";
+  }
+  if (err.code === "insufficient_scope") {
+    return "this token only has read access. Create a write-scoped token in the Seneca console.";
+  }
+  if (err.code === "rate_limit_exceeded") {
+    const details = err.details as { retry_after_seconds?: number } | undefined;
+    const retry = details?.retry_after_seconds;
+    return `rate limit hit${retry ? `. Retry in ${retry}s.` : "."}`;
+  }
+  if (err.code === "validation_failed") {
+    return "the request body failed validation. Run with -v to see the exact payload sent.";
+  }
+  if (err.status === 404) {
+    return "resource not found, or it belongs to a different organization. Verify the id and your token's org.";
+  }
+  if (err.status === 409) {
+    return "the change conflicts with current state (e.g. duplicate slug). Fetch latest and retry.";
+  }
+  if (err.status >= 500) {
+    return "server-side error. Retry after a short delay; if it persists report it with the request id from -v logs.";
+  }
+  return null;
 }
 
 function readVersion(): string {

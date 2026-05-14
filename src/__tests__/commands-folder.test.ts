@@ -30,7 +30,15 @@ beforeEach(async () => {
       method: init.method,
       body: init.body ? JSON.parse(init.body as string) : undefined,
     });
-    return Promise.resolve(new Response(JSON.stringify({ id: "f1" })));
+    if (init.method === "DELETE") {
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }
+    const path = url.replace("https://test", "");
+    const isList = init.method === "GET" && /\/folders$/.test(path);
+    const body = isList
+      ? { data: [{ id: "f1", title: "Docs", slug: "docs", is_folder: true }] }
+      : { data: { id: "f1", title: "Docs", slug: "docs", is_folder: true } };
+    return Promise.resolve(new Response(JSON.stringify(body)));
   });
   globalThis.fetch = fetchMock as unknown as typeof fetch;
 });
@@ -51,45 +59,62 @@ async function run(args: string[]): Promise<void> {
 }
 
 describe("folder list", () => {
-  it("GETs folders for website", async () => {    await run(["list", "w1"]);
+  it("GETs /websites/<id>/folders", async () => {
+    await run(["list", "w1"]);
     expect(captured[0]?.path).toBe("/api/v1/websites/w1/folders");
+    expect(captured[0]?.method).toBe("GET");
   });
 });
 
 describe("folder get", () => {
-  it("GETs by id", async () => {
+  it("GETs via /pages/<id> (folders are pages)", async () => {
     await run(["get", "f1"]);
-    expect(captured[0]?.path).toBe("/api/v1/folders/f1");
+    expect(captured[0]?.path).toBe("/api/v1/pages/f1");
   });
 });
 
 describe("folder create", () => {
-  it("POSTs with name and null parent", async () => {
-    await run(["create", "--website", "w1", "--name", "Docs"]);
+  it("POSTs title/slug/parentId to /websites/<id>/folders", async () => {
+    await run([
+      "create",
+      "--website", "w1",
+      "--title", "Docs",
+      "--slug", "docs",
+    ]);
     expect(captured[0]?.method).toBe("POST");
-    expect(captured[0]?.body).toEqual({ name: "Docs", parent_id: null });
+    expect(captured[0]?.path).toBe("/api/v1/websites/w1/folders");
+    expect(captured[0]?.body).toEqual({
+      title: "Docs",
+      slug: "docs",
+      parentId: null,
+    });
   });
 
-  it("includes parent_id when --parent given", async () => {
-    await run(["create", "--website", "w1", "--name", "Sub", "--parent", "p"]);
-    expect(captured[0]?.body).toEqual({ name: "Sub", parent_id: "p" });
+  it("includes parentId when --parent given", async () => {
+    await run([
+      "create",
+      "--website", "w1",
+      "--title", "Sub",
+      "--slug", "sub",
+      "--parent", "f1",
+    ]);
+    expect(captured[0]?.body).toMatchObject({ parentId: "f1" });
   });
 });
 
 describe("folder update", () => {
-  it("PATCHes provided fields", async () => {
-    await run(["update", "f1", "--name", "Renamed"]);
-    expect(captured[0]?.body).toEqual({ name: "Renamed" });
-  });
-
-  it("PATCHes parent_id alone", async () => {
-    await run(["update", "f1", "--parent", "p2"]);
-    expect(captured[0]?.body).toEqual({ parent_id: "p2" });
+  it("PATCHes via /pages/<id>", async () => {
+    await run(["update", "f1", "--title", "Renamed"]);
+    expect(captured[0]?.path).toBe("/api/v1/pages/f1");
+    expect(captured[0]?.method).toBe("PATCH");
+    expect(captured[0]?.body).toEqual({ title: "Renamed" });
   });
 });
 
 describe("folder delete", () => {
-  it("DELETEs by id", async () => {    await run(["delete", "f1"]);
+  it("DELETEs via /pages/<id>", async () => {
+    await run(["delete", "f1"]);
+    expect(captured[0]?.path).toBe("/api/v1/pages/f1");
     expect(captured[0]?.method).toBe("DELETE");
   });
 });

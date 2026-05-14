@@ -34,7 +34,17 @@ beforeEach(async () => {
       method: init.method,
       body: init.body ? JSON.parse(init.body as string) : undefined,
     });
-    return Promise.resolve(new Response(JSON.stringify({ id: "w1" })));
+    // DELETE -> 204 No Content
+    if (init.method === "DELETE") {
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }
+    // List endpoints: GET on /websites (no id segment after)
+    const path = url.replace("https://test", "");
+    const isList = init.method === "GET" && /\/api\/v1\/websites$/.test(path);
+    const body = isList
+      ? { data: [{ id: "w1", name: "X" }] }
+      : { data: { id: "w1", name: "X" } };
+    return Promise.resolve(new Response(JSON.stringify(body)));
   });
   globalThis.fetch = fetchMock as unknown as typeof fetch;
 });
@@ -55,7 +65,8 @@ async function run(args: string[]): Promise<void> {
 }
 
 describe("website list", () => {
-  it("GETs /api/v1/websites", async () => {    await run(["list"]);
+  it("GETs /api/v1/websites", async () => {
+    await run(["list"]);
     expect(captured[0]?.path).toBe("/api/v1/websites");
     expect(captured[0]?.method).toBe("GET");
   });
@@ -70,16 +81,16 @@ describe("website get", () => {
 });
 
 describe("website create", () => {
-  it("POSTs with name and domain", async () => {
-    await run(["create", "--name", "X", "--domain", "x.test"]);
+  it("POSTs with name and url", async () => {
+    await run(["create", "--name", "X", "--url", "https://x.test"]);
     expect(captured[0]?.path).toBe("/api/v1/websites");
     expect(captured[0]?.method).toBe("POST");
-    expect(captured[0]?.body).toEqual({ name: "X", domain: "x.test" });
+    expect(captured[0]?.body).toEqual({ name: "X", url: "https://x.test" });
   });
 
-  it("sends null domain when omitted", async () => {
+  it("sends null url when omitted", async () => {
     await run(["create", "--name", "Y"]);
-    expect(captured[0]?.body).toEqual({ name: "Y", domain: null });
+    expect(captured[0]?.body).toEqual({ name: "Y", url: null });
   });
 });
 
@@ -89,50 +100,52 @@ describe("website update", () => {
     expect(captured[0]?.method).toBe("PATCH");
     expect(captured[0]?.body).toEqual({ name: "New" });
   });
+
+  it("PATCHes domain when --domain is given", async () => {
+    await run(["update", "w1", "--domain", "new.test"]);
+    expect(captured[0]?.body).toEqual({ domain: "new.test" });
+  });
 });
 
 describe("website delete", () => {
-  it("DELETEs by id and prints confirmation", async () => {    await run(["delete", "w1"]);
+  it("DELETEs by id and prints confirmation", async () => {
+    await run(["delete", "w1"]);
     expect(captured[0]?.method).toBe("DELETE");
     expect(logs.some((l) => l.includes("Deleted w1"))).toBe(true);
   });
 });
 
 describe("website design", () => {
-  it("GETs design", async () => {
-    await run(["design", "get", "w1"]);
+  it("PATCHes design with explicit scheme and colors", async () => {
+    await run([
+      "design", "update", "w1",
+      "--scheme", "design-01",
+      "--primary", "#283593",
+      "--secondary", "#4527a0",
+    ]);
     expect(captured[0]?.path).toBe("/api/v1/websites/w1/design");
+    expect(captured[0]?.method).toBe("PATCH");
+    expect(captured[0]?.body).toEqual({
+      designScheme: "design-01",
+      primaryColor: "#283593",
+      secondaryColor: "#4527a0",
+    });
   });
 
-  it("PATCHes design from JSON stdin", async () => {
+  it("PATCHes design from JSON stdin via update-file", async () => {
     const { Readable } = await import("node:stream");
-    const stream = Readable.from([JSON.stringify({ primary_color: "#000" })]);
+    const stream = Readable.from([
+      JSON.stringify({ designScheme: "design-01", primaryColor: "#000" }),
+    ]);
     Object.defineProperty(stream, "isTTY", { value: false, configurable: true });
     const orig = process.stdin;
     Object.defineProperty(process, "stdin", { value: stream, configurable: true });
     try {
-      await run(["design", "update", "w1"]);
+      await run(["design", "update-file", "w1"]);
     } finally {
       Object.defineProperty(process, "stdin", { value: orig, configurable: true });
     }
     expect(captured[0]?.method).toBe("PATCH");
-    expect(captured[0]?.body).toEqual({ primary_color: "#000" });
-  });
-});
-
-describe("website domain", () => {
-  it("GETs domain", async () => {
-    await run(["domain", "get", "w1"]);
-    expect(captured[0]?.path).toBe("/api/v1/websites/w1/domain");
-  });
-
-  it("PATCHes with new domain", async () => {
-    await run(["domain", "update", "w1", "--domain", "new.test"]);
-    expect(captured[0]?.body).toEqual({ domain: "new.test" });
-  });
-
-  it("PATCHes domain to null when empty string", async () => {
-    await run(["domain", "update", "w1", "--domain", ""]);
-    expect(captured[0]?.body).toEqual({ domain: null });
+    expect(captured[0]?.body).toEqual({ designScheme: "design-01", primaryColor: "#000" });
   });
 });

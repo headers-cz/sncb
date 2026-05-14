@@ -41,16 +41,18 @@ function stubFetch(body: unknown): void {
 
 describe("table render smoke", () => {
   it("renders website list in table mode (invokes column callbacks)", async () => {
-    stubFetch([
-      {
-        id: "w1",
-        organization_id: "org",
-        name: "Web",
-        domain: "x.test",
-        created_at: "2026-01-01",
-        updated_at: "2026-05-14",
-      },
-    ]);
+    stubFetch({
+      data: [
+        {
+          id: "w1",
+          organization_id: "org",
+          name: "Web",
+          domain: "x.test",
+          created_at: "2026-01-01",
+          updated_at: "2026-05-14",
+        },
+      ],
+    });
     const cmd = buildWebsiteCommand(() => ({ output: "table" }));
     cmd.exitOverride();
     await cmd.parseAsync(["list"], { from: "user" });
@@ -59,19 +61,21 @@ describe("table render smoke", () => {
   });
 
   it("renders page list in table mode", async () => {
-    stubFetch([
-      {
-        id: "p1",
-        website_id: "w1",
-        folder_id: null,
-        title: "Hi",
-        slug: "hi",
-        status: "draft",
-        published_at: null,
-        created_at: "2026-01-01",
-        updated_at: "2026-05-14",
-      },
-    ]);
+    stubFetch({
+      data: [
+        {
+          id: "p1",
+          website_id: "w1",
+          folder_id: null,
+          title: "Hi",
+          slug: "hi",
+          status: "draft",
+          published_at: null,
+          created_at: "2026-01-01",
+          updated_at: "2026-05-14",
+        },
+      ],
+    });
     const cmd = buildPageCommand(() => ({ output: "table" }));
     cmd.exitOverride();
     await cmd.parseAsync(["list", "w1"], { from: "user" });
@@ -79,26 +83,30 @@ describe("table render smoke", () => {
   });
 
   it("renders page versions in table mode", async () => {
-    stubFetch([
-      { id: "v1", page_id: "p1", version: 1, created_at: "2026-01-01", created_by: "u1" },
-    ]);
+    stubFetch({
+      data: [{ id: "v1", page_id: "p1", title: "Initial", content: "<p>x</p>", user_id: "u1", created_at: "2026-01-01" }],
+    });
     const cmd = buildPageCommand(() => ({ output: "table" }));
     cmd.exitOverride();
     await cmd.parseAsync(["versions", "p1"], { from: "user" });
-    expect(logs.some((l) => l.includes("VERSION"))).toBe(true);
+    expect(logs.some((l) => l.includes("Initial"))).toBe(true);
   });
 
   it("renders folder list in table mode", async () => {
-    stubFetch([
-      {
-        id: "f1",
-        website_id: "w1",
-        name: "Docs",
-        parent_id: null,
-        created_at: "2026-01-01",
-        updated_at: "2026-05-14",
-      },
-    ]);
+    stubFetch({
+      data: [
+        {
+          id: "f1",
+          website_id: "w1",
+          title: "Docs",
+          slug: "docs",
+          parent_id: null,
+          is_folder: true,
+          created_at: "2026-01-01",
+          updated_at: "2026-05-14",
+        },
+      ],
+    });
     const cmd = buildFolderCommand(() => ({ output: "table" }));
     cmd.exitOverride();
     await cmd.parseAsync(["list", "w1"], { from: "user" });
@@ -107,18 +115,22 @@ describe("table render smoke", () => {
 
   it("renders agent get in table mode", async () => {
     stubFetch({
-      id: "a1",
-      organization_id: "org",
-      name: "Bot",
-      description: null,
-      language: "cs",
-      settings: {},
-      created_at: "2026-01-01",
-      updated_at: "2026-05-14",
+      data: {
+        id: "a1",
+        organization_id: "org",
+        slug: "bot",
+        company_name: "Bot",
+        source_url: null,
+        system_prompt: null,
+        language: "cs",
+        personality: "friendly",
+        status: "ready",
+        created_at: "2026-01-01",
+      },
     });
     const cmd = buildAgentCommand(() => ({ output: "table" }));
     cmd.exitOverride();
-    await cmd.parseAsync(["get"], { from: "user" });
+    await cmd.parseAsync(["get", "a1"], { from: "user" });
     expect(logs.some((l) => l.includes("Bot"))).toBe(true);
     expect(logs.some((l) => l.includes("cs"))).toBe(true);
   });

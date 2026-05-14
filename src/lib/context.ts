@@ -7,6 +7,7 @@ export interface GlobalOptions {
   token?: string;
   output?: string;
   json?: boolean;
+  verbose?: boolean;
 }
 
 export interface CommandContext {
@@ -18,8 +19,27 @@ export async function createContext(global: GlobalOptions): Promise<CommandConte
   const stored = await loadConfig();
   const apiUrl = global.apiUrl ?? process.env["SNCB_API_URL"] ?? stored.apiUrl;
   const token = global.token ?? process.env["SNCB_TOKEN"] ?? stored.token;
+  const verbose = Boolean(global.verbose);
   return {
-    client: new ApiClient({ apiUrl, token }),
+    client: new ApiClient({
+      apiUrl,
+      token,
+      onRequest: verbose
+        ? ({ method, url, bodyBytes }): void => {
+            const tag = `\x1b[2m[sncb]\x1b[0m`;
+            process.stderr.write(`${tag} -> ${method} ${url}${bodyBytes ? ` (${bodyBytes}B body)` : ""}\n`);
+          }
+        : undefined,
+      onResponse: verbose
+        ? ({ method, url, status, durationMs }): void => {
+            const color = status >= 500 ? "\x1b[31m" : status >= 400 ? "\x1b[33m" : "\x1b[32m";
+            const tag = `\x1b[2m[sncb]\x1b[0m`;
+            process.stderr.write(
+              `${tag} <- ${color}${status}\x1b[0m ${method} ${url} \x1b[2m(${durationMs}ms)\x1b[0m\n`,
+            );
+          }
+        : undefined,
+    }),
     format: resolveFormat(global),
   };
 }

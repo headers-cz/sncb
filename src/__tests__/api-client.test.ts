@@ -93,12 +93,15 @@ describe("ApiClient", () => {
     expect(data).toBeUndefined();
   });
 
-  it("throws ApiError on 4xx with parsed error code", async () => {
+  it("throws ApiError on 4xx with parsed structured error code", async () => {
     const fetchImpl = mock(() =>
       Promise.resolve(
-        new Response(JSON.stringify({ error: "not_found", message: "Missing" }), {
-          status: 404,
-        }),
+        new Response(
+          JSON.stringify({
+            error: { code: "not_found", message: "Missing", details: { id: "x" } },
+          }),
+          { status: 404 },
+        ),
       ),
     );
     const client = new ApiClient({
@@ -111,9 +114,10 @@ describe("ApiClient", () => {
     expect((err as ApiError).status).toBe(404);
     expect((err as ApiError).code).toBe("not_found");
     expect((err as ApiError).message).toBe("Missing");
+    expect((err as ApiError).details).toEqual({ id: "x" });
   });
 
-  it("falls back to http_<status> when no error code provided", async () => {
+  it("falls back to http_<status> with default message for empty error body", async () => {
     const fetchImpl = mock(() =>
       Promise.resolve(new Response("", { status: 500, statusText: "Server Down" })),
     );
@@ -124,7 +128,7 @@ describe("ApiClient", () => {
     });
     const err = await client.request("/api/v1/foo").catch((e) => e);
     expect((err as ApiError).code).toBe("http_500");
-    expect((err as ApiError).message).toBe("Server Down");
+    expect((err as ApiError).message).toBe("Internal server error");
   });
 
   it("handles non-JSON error body as plain text message", async () => {
