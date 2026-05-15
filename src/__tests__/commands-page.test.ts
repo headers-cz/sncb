@@ -19,7 +19,17 @@ let stderrSpy: ReturnType<typeof spyOn>;
 let metaForPatch: { saved_as: "draft" | "live"; needs_publish: boolean } = { saved_as: "live", needs_publish: false };
 let pageGetExtras: Record<string, unknown> = {};
 
+let origStdinIsTTY: boolean | undefined;
+let origStdoutIsTTY: boolean | undefined;
+
 beforeEach(async () => {
+  // Force non-TTY so confirm() refuses interactively-required ops via
+  // ConfirmationRequiredError instead of hanging on a y/N prompt when the
+  // suite is invoked from a real terminal (e.g. `bun test` locally).
+  origStdinIsTTY = (process.stdin as { isTTY?: boolean }).isTTY;
+  origStdoutIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
+  Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+  Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
   // page find no-match sets process.exitCode = 1; reset so test order does
   // not depend on previous failures bleeding into subsequent runs.
   process.exitCode = 0;
@@ -75,6 +85,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  Object.defineProperty(process.stdin, "isTTY", { value: origStdinIsTTY, configurable: true });
+  Object.defineProperty(process.stdout, "isTTY", { value: origStdoutIsTTY, configurable: true });
   process.exitCode = 0;
   globalThis.fetch = origFetch;
   logSpy.mockRestore();

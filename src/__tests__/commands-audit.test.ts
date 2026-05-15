@@ -11,8 +11,14 @@ let log: (msg: string) => void;
 let err: (msg: string) => void;
 let errs: string[];
 const ORIG_XDG_STATE = process.env["XDG_STATE_HOME"];
+let origStdinIsTTY: boolean | undefined;
+let origStdoutIsTTY: boolean | undefined;
 
 beforeEach(async () => {
+  origStdinIsTTY = (process.stdin as { isTTY?: boolean }).isTTY;
+  origStdoutIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
+  Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+  Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
   tempBase = await mkdtemp(join(tmpdir(), "sncb-audit-cmd-"));
   process.env["XDG_STATE_HOME"] = tempBase;
   auditFile = join(tempBase, "sncb", "audit.log");
@@ -28,6 +34,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  Object.defineProperty(process.stdin, "isTTY", { value: origStdinIsTTY, configurable: true });
+  Object.defineProperty(process.stdout, "isTTY", { value: origStdoutIsTTY, configurable: true });
   if (ORIG_XDG_STATE === undefined) {
     delete process.env["XDG_STATE_HOME"];
   } else {
