@@ -20,6 +20,9 @@ let metaForPatch: { saved_as: "draft" | "live"; needs_publish: boolean } = { sav
 let pageGetExtras: Record<string, unknown> = {};
 
 beforeEach(async () => {
+  // page find no-match sets process.exitCode = 1; reset so test order does
+  // not depend on previous failures bleeding into subsequent runs.
+  process.exitCode = 0;
   tempHome = await mkdtemp(join(tmpdir(), "sncb-page-"));
   process.env["XDG_CONFIG_HOME"] = tempHome;
   process.env["SNCB_TOKEN"] = "tok";
@@ -72,6 +75,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  process.exitCode = 0;
   globalThis.fetch = origFetch;
   logSpy.mockRestore();
   stderrSpy.mockRestore();

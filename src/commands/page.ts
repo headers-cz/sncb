@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { createContext, type GlobalOptions } from "../lib/context.js";
-import { render, type Column } from "../output/render.js";
+import { render, type Column, type OutputFormat } from "../output/render.js";
 import { readContent } from "../lib/io.js";
 import type { Page, PageUpdateMeta, PageVersion } from "../api/types.js";
 import { confirm } from "../lib/confirm.js";
@@ -39,14 +39,19 @@ interface DraftFetchResult {
 async function fetchPageRequiringDraft(
   client: { request: <T>(p: string) => Promise<T> },
   id: string,
-  format: string,
-  extraJson: Record<string, unknown> = {},
+  format: OutputFormat,
+  extraStructured: Record<string, unknown> = {},
 ): Promise<DraftFetchResult | null> {
   const page = await client.request<Page>(`/api/v1/pages/${id}`);
   recordResponseMetadata({ resourceId: page.id });
   if (page.has_draft) return { page, hasDraft: true };
-  if (format === "json") {
-    console.log(JSON.stringify({ has_draft: false, ...extraJson }, null, 2));
+  // For machine-readable formats (json/yaml) emit a structured "no draft"
+  // marker so consumers can detect it without parsing stderr. Table mode gets
+  // a yellow stderr hint.
+  if (format === "json" || format === "yaml") {
+    console.log(
+      render({ format, data: { has_draft: false, ...extraStructured } }),
+    );
   } else {
     process.stderr.write(`${ansi.yellow(`No pending draft for page ${id}.`)}\n`);
   }
@@ -336,18 +341,13 @@ function buildPageDraftCommand(getGlobal: () => GlobalOptions): Command {
       const result = await fetchPageRequiringDraft(ctx.client, id, ctx.format);
       if (!result) return;
       const { page: item } = result;
-      if (ctx.format === "json") {
-        console.log(
-          JSON.stringify(
-            {
-              page_id: item.id,
-              draft_title: item.draft_title,
-              draft_content: item.draft_content,
-            },
-            null,
-            2,
-          ),
-        );
+      const payload = {
+        page_id: item.id,
+        draft_title: item.draft_title,
+        draft_content: item.draft_content,
+      };
+      if (ctx.format === "json" || ctx.format === "yaml") {
+        console.log(render({ format: ctx.format, data: payload }));
         return;
       }
       console.log(`Draft title: ${item.draft_title ?? "(unchanged)"}`);
@@ -375,18 +375,17 @@ function buildPageDraftCommand(getGlobal: () => GlobalOptions): Command {
         const draftTitle = item.draft_title ?? item.title;
         const hunks = lineDiff(item.content, item.draft_content ?? item.content);
         const stats = diffStats(hunks);
-        if (ctx.format === "json") {
+        if (ctx.format === "json" || ctx.format === "yaml") {
           console.log(
-            JSON.stringify(
-              {
+            render({
+              format: ctx.format,
+              data: {
                 page_id: item.id,
                 title: { live: liveTitle, draft: draftTitle },
                 stats,
                 hunks,
               },
-              null,
-              2,
-            ),
+            }),
           );
           return;
         }
@@ -414,20 +413,17 @@ function buildPageDraftCommand(getGlobal: () => GlobalOptions): Command {
     .option("-y, --yes", "Skip the confirmation prompt")
     .action(async (id: string, opts: { yes?: boolean }) => {
       const ctx = await createContext(getGlobal());
-      let label = id;
-      // Pre-flight GET on interactive path: needed to (a) show the page title
-      // in the confirm prompt and (b) short-circuit cleanly when there is no
-      // draft to discard. Skipped when --yes (scripting path) to keep that
-      // case to a single round-trip.
-      if (!opts.yes) {
-        const pg = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
-        label = `'${pg.title}' (${pg.id})`;
-        if (!pg.has_draft) {
-          process.stderr.write(
-            `${ansi.yellow(`No pending draft for ${label}. Nothing to discard.`)}\n`,
-          );
-          return;
-        }
+      // Pre-flight GET: needed to (a) show the page title in the confirm
+      // prompt, (b) short-circuit cleanly when there is no draft to discard.
+      // Runs even with --yes so a scripted "discard everything" loop is a
+      // no-op for already-clean pages instead of issuing wasted DELETEs.
+      const pg = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
+      const label = `'${pg.title}' (${pg.id})`;
+      if (!pg.has_draft) {
+        process.stderr.write(
+          `${ansi.yellow(`No pending draft for ${label}. Nothing to discard.`)}\n`,
+        );
+        return;
       }
       const proceed = await confirm({
         prompt: `Discard draft of page ${label}? Live content will be kept.`,

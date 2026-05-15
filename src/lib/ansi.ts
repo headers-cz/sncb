@@ -1,4 +1,6 @@
-const useColor = process.stdout.isTTY && !process.env["NO_COLOR"];
+// Per the NO_COLOR spec (https://no-color.org/), any value - including the
+// empty string - disables ANSI. So check key presence, not truthiness.
+const useColor = process.stdout.isTTY && !("NO_COLOR" in process.env);
 
 function wrap(open: string, close: string = "0"): (s: string) => string {
   return (s: string): string =>
