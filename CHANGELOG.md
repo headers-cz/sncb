@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.4.0](https://github.com/headers-cz/sncb/compare/v0.3.0...v0.4.0) (2026-05-16)
+
+
+### Features
+
+* [SNC-97] initial sncb CLI on Bun ([4183d85](https://github.com/headers-cz/sncb/commit/4183d85934c327d81c32869da92eba8b63f3b738))
+* **cli:** [SNC-97] adapt to unified API v1 contract, add verbose + actionable errors ([f5491be](https://github.com/headers-cz/sncb/commit/f5491be2fee9205057efb2a0bedc0389270a14e9))
+* **cli:** [SNC-97] add audit log + interactive delete confirmation ([737d984](https://github.com/headers-cz/sncb/commit/737d984ba90e445e78872d72dc8e7d388d696e36))
+* **cli:** [SNC-97] add config command and seneca branding in help ([64fdd74](https://github.com/headers-cz/sncb/commit/64fdd7441183a8b271f7073c92934553e4e7c5c2))
+* **cli:** [SNC-97] page create --publish/--quiet + page find by slug ([3812c0f](https://github.com/headers-cz/sncb/commit/3812c0f0630831fee89aa53c3f68629c191e3caf))
+* **cli:** [SNC-97] page draft subcommand group + DRAFT column in list ([67b0d4e](https://github.com/headers-cz/sncb/commit/67b0d4e727d846482647eb70646ef25ebe9a7c58))
+* **cli:** [SNC-97] page update draft hint + --publish flag ([c8a4101](https://github.com/headers-cz/sncb/commit/c8a41010dca2f79af4239efa3aac2ceecb8161b5))
+* **cli:** [SNC-97] redesign root help screen ([c81f487](https://github.com/headers-cz/sncb/commit/c81f487e6fb5301907ff68ef7fe33f8cdcdfc8dd))
+* **cli:** [SNC-97] surface page draft state + add --publish flag ([fb55278](https://github.com/headers-cz/sncb/commit/fb552786426947567ab37c38cca0208ad5c6768c))
+
+
+### Bug Fixes
+
+* **cli:** [SNC-97] address coderabbit review + restore CI coverage ([8c00f52](https://github.com/headers-cz/sncb/commit/8c00f522da4f785a202d8bb181122db7c44d8dac))
+
 ## 0.3.0 (2026-05-14)
 
 ### Breaking changes
