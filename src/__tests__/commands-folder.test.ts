@@ -16,7 +16,17 @@ let fetchMock: ReturnType<typeof mock>;
 let origFetch: typeof fetch;
 let logSpy: ReturnType<typeof spyOn>;
 
+let origStdinIsTTY: boolean | undefined;
+let origStdoutIsTTY: boolean | undefined;
+
 beforeEach(async () => {
+  // Force non-TTY so confirm() refuses interactively-required ops via
+  // ConfirmationRequiredError instead of hanging on a y/N prompt when the
+  // suite is invoked from a real terminal (e.g. `bun test` locally).
+  origStdinIsTTY = (process.stdin as { isTTY?: boolean }).isTTY;
+  origStdoutIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
+  Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
+  Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
   tempHome = await mkdtemp(join(tmpdir(), "sncb-folder-"));
   process.env["XDG_CONFIG_HOME"] = tempHome;
   process.env["SNCB_TOKEN"] = "tok";
@@ -44,6 +54,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  Object.defineProperty(process.stdin, "isTTY", { value: origStdinIsTTY, configurable: true });
+  Object.defineProperty(process.stdout, "isTTY", { value: origStdoutIsTTY, configurable: true });
   globalThis.fetch = origFetch;
   logSpy.mockRestore();
   delete process.env["XDG_CONFIG_HOME"];
