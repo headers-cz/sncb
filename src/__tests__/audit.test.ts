@@ -13,6 +13,7 @@ import {
   isAuditEnabled,
   type AuditPaths,
 } from "../lib/audit.js";
+import { deriveArgs, deriveCommandPath } from "../cli.js";
 
 let tempBase: string;
 let paths: AuditPaths;
@@ -127,6 +128,36 @@ describe("invocation lifecycle", () => {
     // double-check the file contents directly
     const raw = await readFile(paths.file, "utf-8");
     expect(raw).not.toContain("snc_live_secret_xxx");
+  });
+
+  it("never writes a token supplied via the real --token argv pipeline", async () => {
+    // Regression for the audit-log token leak: a long token after `--token`
+    // used to slip through deriveArgs into args[] and onto disk. Drive the
+    // exact production path (deriveCommandPath + deriveArgs -> startInvocation
+    // -> endInvocation) and assert the secret never reaches the log file.
+    const secret = `snc_live_${"a".repeat(40)}`;
+    const argv = ["node", "sncb", "--token", secret, "website", "list"];
+    startInvocation({
+      cmd: deriveCommandPath(argv),
+      args: deriveArgs(argv),
+      flags: {},
+    });
+    await endInvocation("ok", undefined, paths);
+
+    const raw = await readFile(paths.file, "utf-8");
+    expect(raw).not.toContain(secret);
+    const entries = await readAuditEntries(paths);
+    expect(entries[0]?.cmd).toBe("website list");
+    expect(entries[0]?.args).toEqual([]);
+  });
+
+  it("redacts a token-shaped positional argument as a backstop", async () => {
+    const secret = `snc_live_${"b".repeat(40)}`;
+    startInvocation({ cmd: "health", args: deriveArgs(["node", "sncb", secret]), flags: {} });
+    await endInvocation("ok", undefined, paths);
+    const raw = await readFile(paths.file, "utf-8");
+    expect(raw).not.toContain(secret);
+    expect(raw).toContain("<redacted>");
   });
 
   it("does not throw when SNCB_AUDIT=off", async () => {

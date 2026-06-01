@@ -5,6 +5,7 @@ import {
   readAuditEntries,
   type AuditEntry,
 } from "../lib/audit.js";
+import { stripControl } from "../lib/sanitize.js";
 
 const DEFAULT_LAST = 50;
 
@@ -117,7 +118,11 @@ function formatEntry(e: AuditEntry): string {
   const outcomeBadge = badge(e);
   const cmd = `${e.cmd}${formatArgs(e.args)}${formatFlags(e.flags)}`;
   const detail = formatDetail(e);
-  return `${ts}  ${outcomeBadge}  ${cmd.padEnd(48)}  ${detail}`;
+  // Persisted fields (chiefly error_code) can carry server-controlled escape
+  // sequences that round-trip through JSON. Strip them from the human view so
+  // `audit tail` cannot be turned into a delayed terminal-injection vector.
+  // The --json branch in buildAuditCommand emits raw entries and is untouched.
+  return stripControl(`${ts}  ${outcomeBadge}  ${cmd.padEnd(48)}  ${detail}`);
 }
 
 function badge(e: AuditEntry): string {

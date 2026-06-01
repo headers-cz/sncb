@@ -4,6 +4,7 @@ import { render, type Column } from "../output/render.js";
 import type { Page } from "../api/types.js";
 import { confirm } from "../lib/confirm.js";
 import { recordResponseMetadata } from "../lib/audit.js";
+import { stripControl } from "../lib/sanitize.js";
 
 /**
  * Folders in Seneca are pages with `is_folder: true`. The CLI exposes them
@@ -105,7 +106,7 @@ export function buildFolderCommand(getGlobal: () => GlobalOptions): Command {
       if (!opts.yes) {
         try {
           const f = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
-          label = `'${f.title}' (${f.id})`;
+          label = `'${stripControl(f.title)}' (${f.id})`;
         } catch {
           // fall through
         }

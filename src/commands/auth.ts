@@ -3,6 +3,8 @@ import prompts from "prompts";
 import { loadConfig, saveConfig, clearToken } from "../config/storage.js";
 import { ApiClient } from "../api/client.js";
 import type { Health } from "../api/types.js";
+import { isInsecureOptIn, parseApiUrl } from "../lib/api-url.js";
+import { warnTokenOnArgv } from "../lib/context.js";
 
 export interface AuthDeps {
   promptToken?: () => Promise<string>;
@@ -20,10 +22,15 @@ export function buildAuthCommand(deps: AuthDeps = {}): Command {
     .option("--token <token>", "API token (skips interactive prompt)")
     .option("--api-url <url>", "API base URL to store")
     .action(async (opts: { token?: string; apiUrl?: string }) => {
+      warnTokenOnArgv(opts.token !== undefined);
       const token = opts.token ?? (await (deps.promptToken ?? defaultPromptToken)());
       if (!token) throw new Error("Token is required.");
       const stored = await loadConfig();
       const apiUrl = opts.apiUrl ?? stored.apiUrl;
+      // Validate the URL before the health probe sends the token to it: reject
+      // bad schemes and plaintext http to a remote host (loopback http is fine
+      // for local dev; SNCB_INSECURE overrides).
+      parseApiUrl(apiUrl, { allowInsecure: isInsecureOptIn() });
       const client = (deps.clientFactory ?? defaultClientFactory)({ apiUrl, token });
       const health = await client.request<Health>("/api/v1/health");
       await saveConfig({ ...stored, apiUrl, token });

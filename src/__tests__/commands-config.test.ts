@@ -99,6 +99,18 @@ describe("config set", () => {
     await expect(run("set", "apiUrl", "not-a-url")).rejects.toThrow(/not a valid URL/);
   });
 
+  it("rejects plaintext http to a remote host", async () => {
+    await expect(run("set", "apiUrl", "http://api.example.com")).rejects.toThrow(
+      /plaintext http/,
+    );
+  });
+
+  it("still allows http to loopback for local dev", async () => {
+    await run("set", "apiUrl", "http://localhost:3002");
+    const cfg = JSON.parse(await readFile(paths.file, "utf-8"));
+    expect(cfg.apiUrl).toBe("http://localhost:3002");
+  });
+
   it("parses boolean values for autoUpdate", async () => {
     await run("set", "autoUpdate", "false");
     const cfg = JSON.parse(await readFile(paths.file, "utf-8"));

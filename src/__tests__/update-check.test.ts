@@ -74,7 +74,6 @@ describe("runBackgroundUpdateCheck", () => {
     const res = await runBackgroundUpdateCheck("0.1.0", {
       fetchImpl: fakeFetch("9.9.9"),
       notify,
-      skipBackgroundInstall: true,
     });
     expect(res.checked).toBe(false);
     expect(notify.mock.calls.length).toBe(0);
@@ -99,7 +98,6 @@ describe("runBackgroundUpdateCheck", () => {
       fetchImpl: fetchImpl as unknown as typeof fetch,
       now: () => now,
       notify: () => undefined,
-      skipBackgroundInstall: true,
     });
     expect(res.checked).toBe(false);
     expect(fetchImpl.mock.calls.length).toBe(0);
@@ -110,7 +108,6 @@ describe("runBackgroundUpdateCheck", () => {
     const res = await runBackgroundUpdateCheck("0.1.0", {
       fetchImpl: fakeFetch("0.2.0"),
       notify,
-      skipBackgroundInstall: true,
     });
     expect(res.newer).toBe(true);
     expect(notify.mock.calls.length).toBe(1);
@@ -119,12 +116,21 @@ describe("runBackgroundUpdateCheck", () => {
     expect(stored.lastUpdateCheckAt).toBeGreaterThan(0);
   });
 
+  it("notice tells the user to upgrade manually; never auto-installs", async () => {
+    const notify = mock((_: string) => undefined);
+    const res = await runBackgroundUpdateCheck("0.1.0", {
+      fetchImpl: fakeFetch("0.2.0"),
+      notify,
+    });
+    expect(res.newer).toBe(true);
+    expect(String(notify.mock.calls[0]?.[0])).toContain("sncb upgrade");
+  });
+
   it("does not notify when on latest", async () => {
     const notify = mock((_: string) => undefined);
     const res = await runBackgroundUpdateCheck("1.0.0", {
       fetchImpl: fakeFetch("1.0.0"),
       notify,
-      skipBackgroundInstall: true,
     });
     expect(res.newer).toBe(false);
     expect(notify.mock.calls.length).toBe(0);
@@ -137,22 +143,14 @@ describe("runBackgroundUpdateCheck", () => {
         Promise.resolve(new Response("nope", { status: 500 })),
       ) as unknown as typeof fetch,
       notify,
-      skipBackgroundInstall: true,
     });
     expect(res.newer).toBe(false);
     expect(notify.mock.calls.length).toBe(0);
   });
 
-  it("spawns detached install when not skipped", async () => {
-    const spawnImpl = mock(() => ({
-      unref: mock(() => undefined),
-    })) as unknown as typeof import("node:child_process").spawn;
-    const res = await runBackgroundUpdateCheck("0.1.0", {
-      fetchImpl: fakeFetch("0.2.0"),
-      notify: () => undefined,
-      spawnImpl,
-    });
-    expect(res.newer).toBe(true);
-    expect((spawnImpl as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(1);
+  it("rejects a non-semver version string from the registry", async () => {
+    const malicious = "9.9.9]0;pwned";
+    const v = await fetchLatestVersion(fakeFetch(malicious));
+    expect(v).toBeNull();
   });
 });

@@ -17,11 +17,23 @@ import { ConfirmationRequiredError } from "./lib/confirm.js";
 import type { GlobalOptions } from "./lib/context.js";
 import { runBackgroundUpdateCheck } from "./lib/update-check.js";
 import { renderRootHelp } from "./lib/help.js";
+import { stripControl } from "./lib/sanitize.js";
 import {
   endInvocation,
   startInvocation,
   type AuditOutcome,
 } from "./lib/audit.js";
+
+// Error messages can carry server-controlled text (the API error body, or a
+// raw non-JSON response). Strip terminal control sequences and cap the length
+// before writing to stderr so a hostile server cannot spoof the terminal.
+const MAX_ERR_FIELD_LEN = 2000;
+function safeErrField(value: string): string {
+  const clean = stripControl(value);
+  return clean.length > MAX_ERR_FIELD_LEN
+    ? `${clean.slice(0, MAX_ERR_FIELD_LEN)}...`
+    : clean;
+}
 
 
 export function buildProgram(): Command {
@@ -34,7 +46,12 @@ export function buildProgram(): Command {
     .option("--token <token>", "Override API token")
     .option("-o, --output <format>", "Output format: table | json | yaml", "table")
     .option("--json", "Shortcut for --output json", false)
-    .option("-v, --verbose", "Log every HTTP request and response to stderr", false);
+    .option("-v, --verbose", "Log every HTTP request and response to stderr", false)
+    .option(
+      "--insecure-allow-token-host",
+      "Allow sending a stored token to a host other than the one it was stored for",
+      false,
+    );
 
   const getGlobal = (): GlobalOptions => program.opts<GlobalOptions>();
 
@@ -86,29 +103,31 @@ export async function runCli(argv: string[]): Promise<number> {
 export function renderError(err: unknown): void {
   if (err instanceof ApiError) {
     process.stderr.write(
-      `API error (${err.status} ${err.code}): ${err.message}\n`,
+      `API error (${err.status} ${safeErrField(err.code)}): ${safeErrField(err.message)}\n`,
     );
     const hint = hintForApiError(err);
     if (hint) process.stderr.write(`  hint: ${hint}\n`);
     return;
   }
   if (err instanceof NetworkError) {
-    process.stderr.write(`Network error: ${err.message}\n`);
+    process.stderr.write(`Network error: ${safeErrField(err.message)}\n`);
     process.stderr.write(
       `  hint: check 'sncb config get apiUrl' and your internet connection\n`,
     );
     return;
   }
   if (err instanceof AuthRequiredError) {
-    process.stderr.write(`${err.message}\n`);
+    process.stderr.write(`${safeErrField(err.message)}\n`);
     return;
   }
   if (err instanceof ConfirmationRequiredError) {
-    process.stderr.write(`${err.message}\n`);
+    process.stderr.write(`${safeErrField(err.message)}\n`);
     process.stderr.write(`  hint: rerun with --yes to confirm.\n`);
     return;
   }
-  process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+  process.stderr.write(
+    `${safeErrField(err instanceof Error ? err.message : String(err))}\n`,
+  );
 }
 
 function hintForApiError(err: ApiError): string | null {
@@ -119,8 +138,11 @@ function hintForApiError(err: ApiError): string | null {
     return "this token only has read access. Create a write-scoped token in the Seneca console.";
   }
   if (err.code === "rate_limit_exceeded") {
-    const details = err.details as { retry_after_seconds?: number } | undefined;
-    const retry = details?.retry_after_seconds;
+    const details = err.details as { retry_after_seconds?: unknown } | undefined;
+    const retry =
+      typeof details?.retry_after_seconds === "number"
+        ? details.retry_after_seconds
+        : undefined;
     return `rate limit hit${retry ? `. Retry in ${retry}s.` : "."}`;
   }
   if (err.code === "validation_failed") {
@@ -153,7 +175,7 @@ function inferErrorCode(err: unknown): string {
  *   ["node","sncb","-v","page","delete","X"]      -> "page delete"
  *   ["node","sncb","--json","audit","tail"]       -> "audit tail"
  */
-function deriveCommandPath(argv: string[]): string {
+export function deriveCommandPath(argv: string[]): string {
   const parts: string[] = [];
   let i = 2;
   // Skip global flags
@@ -184,13 +206,27 @@ function deriveCommandPath(argv: string[]): string {
   return parts.join(" ");
 }
 
-function deriveArgs(argv: string[]): string[] {
+// Global flags that consume a following value. When we see one in deriveArgs
+// we must skip its value too, otherwise a secret like the token (which does
+// not start with "-") would be captured into the audit log. deriveCommandPath
+// already skips these with `i += 2`.
+const VALUE_TAKING_FLAGS = new Set(["--api-url", "--token", "-o", "--output"]);
+
+// Tokens are opaque `snc_live_...` / `snc_test_...` strings. Redact anything
+// that looks like one, as a defense-in-depth backstop so a secret can never be
+// written to the audit log regardless of how it reached argv.
+const TOKEN_LIKE_RE = /^snc_(live|test)_/;
+
+export function deriveArgs(argv: string[]): string[] {
   const out: string[] = [];
   for (let i = 2; i < argv.length; i++) {
     const token = argv[i] ?? "";
-    if (token.startsWith("-")) continue;
+    if (token.startsWith("-")) {
+      if (VALUE_TAKING_FLAGS.has(token)) i += 1; // skip the flag's value too
+      continue;
+    }
     if (out.length === 0 && !looksLikeArgument(token)) continue;
-    out.push(token);
+    out.push(TOKEN_LIKE_RE.test(token) ? "<redacted>" : token);
   }
   return out;
 }

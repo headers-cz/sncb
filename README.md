@@ -17,23 +17,35 @@ After install, `sncb` is on your `$PATH`.
 You need a per-organization API token issued in the Seneca console.
 
 ```bash
-sncb auth login --token snc_live_xxx_yyyy
-# or interactive:
+# Recommended: interactive, non-echoing prompt (token never hits argv).
 sncb auth login
 
 sncb auth whoami
 sncb auth logout
 ```
 
-Token is stored at `~/.config/sncb/config.json` with mode `0600` (XDG Base Directory spec, respects `XDG_CONFIG_HOME`).
+For automation (CI, scripts), pass the token via the `SNCB_TOKEN` environment
+variable rather than a flag:
+
+```bash
+SNCB_TOKEN=snc_live_xxx_yyyy sncb website list
+```
+
+Token is stored at `~/.config/sncb/config.json` with mode `0600`, inside a
+`0700` directory (XDG Base Directory spec, respects `XDG_CONFIG_HOME`).
 
 Per-invocation overrides (highest priority first):
 
-* `--token <token>` flag
+* `--token <token>` flag - **avoid**: arguments are visible in process
+  listings (`ps`) and shell history. Prefer the prompt or `SNCB_TOKEN`. sncb
+  prints a warning when a token is supplied this way.
 * `SNCB_TOKEN` environment variable
 * Stored config
 
-Same priority applies to `--api-url` / `SNCB_API_URL`.
+Same priority applies to `--api-url` / `SNCB_API_URL`. The token is only sent
+over `https` (plain `http` is allowed for loopback dev hosts only), and a token
+read from stored config is never sent to a host other than the one it was
+stored for unless you pass `--insecure-allow-token-host`.
 
 ## Configuration
 
