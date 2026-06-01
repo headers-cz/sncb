@@ -15,7 +15,7 @@
  * hatch; never use it against a real token).
  */
 
-export const DEFAULT_API_URL = "https://app.seneca.headers.cz";
+export const DEFAULT_API_URL = "https://app.senecabot.com";
 
 const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 

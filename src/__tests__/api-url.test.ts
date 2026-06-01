@@ -15,15 +15,15 @@ describe("isLoopbackHost", () => {
   });
 
   it("rejects remote hosts", () => {
-    expect(isLoopbackHost("app.seneca.headers.cz")).toBe(false);
+    expect(isLoopbackHost("app.senecabot.com")).toBe(false);
     expect(isLoopbackHost("evil.tld")).toBe(false);
   });
 });
 
 describe("parseApiUrl", () => {
   it("accepts https for any host", () => {
-    expect(parseApiUrl("https://app.seneca.headers.cz").host).toBe(
-      "app.seneca.headers.cz",
+    expect(parseApiUrl("https://app.senecabot.com").host).toBe(
+      "app.senecabot.com",
     );
   });
 

@@ -136,9 +136,9 @@ In JSON mode (or via `-v`), the raw API error envelope is `{ error: { code, mess
 
 ## Auto-update
 
-`sncb` checks npm once per 24 hours after any command (skipped for `sncb upgrade` itself). If a new version is available, you'll see a notice on stderr and a detached background install runs.
+`sncb` checks npm once per 24 hours after any command (skipped for `sncb upgrade` itself). If a new version is available, you'll see a one-line notice on stderr. It never installs anything on its own - run `sncb upgrade` to update.
 
-To disable:
+To disable the check:
 
 ```bash
 sncb upgrade --no-auto-update
@@ -159,7 +159,7 @@ sncb upgrade --check    # only report, no install
 
 ```json
 {
-  "apiUrl": "https://app.seneca.headers.cz",
+  "apiUrl": "https://app.senecabot.com",
   "token": "snc_live_xxx_yyyy",
   "autoUpdate": true,
   "lastUpdateCheckAt": 0,
@@ -174,7 +174,7 @@ Edit safely - it's a plain JSON file. Token field is sensitive; the file is crea
 ```bash
 bun install
 bun run dev -- --help     # run from source
-bun test                  # 160 tests
+bun test                  # run the test suite
 bun test --coverage       # coverage report
 bun run lint
 bun run typecheck
@@ -183,4 +183,4 @@ bun run build             # produces dist/cli.js
 
 ## License
 
-UNLICENSED - internal to Headers.
+MIT - see [LICENSE](LICENSE).
