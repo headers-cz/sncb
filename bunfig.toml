@@ -2,9 +2,4 @@
 coverage = true
 coverageSkipTestFiles = true
 coverageReporter = ["text"]
-# Coverage is reported in CI (currently ~98% line/function aggregate) but not
-# hard-gated. Bun enforces coverageThreshold per file on a statement metric the
-# text reporter does not show and that is not reproducible locally (local Bun
-# does not enforce the threshold at all), so a hard gate blocks legitimate PRs
-# over an invisible number. Re-introduce once Bun's per-file behavior is
-# visible/stable, or convert to an external coverage check.
+coverageThreshold = { line = 0.90, function = 0.90, statement = 0.90 }

@@ -38,6 +38,9 @@ beforeEach(async () => {
   origStdoutIsTTY = (process.stdout as { isTTY?: boolean }).isTTY;
   Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
   Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
+  // `audit clear` in non-TTY without --yes sets process.exitCode = 1; reset it
+  // so a leaked exit code does not fail the whole `bun test` process.
+  process.exitCode = 0;
   tempBase = await mkdtemp(join(tmpdir(), "sncb-audit-cmd-"));
   process.env["XDG_STATE_HOME"] = tempBase;
   auditFile = join(tempBase, "sncb", "audit.log");
@@ -60,6 +63,7 @@ afterEach(async () => {
   } else {
     process.env["XDG_STATE_HOME"] = ORIG_XDG_STATE;
   }
+  process.exitCode = 0;
   await rm(tempBase, { recursive: true, force: true });
 });
 
