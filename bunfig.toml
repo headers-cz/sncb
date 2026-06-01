@@ -2,10 +2,4 @@
 coverage = true
 coverageSkipTestFiles = true
 coverageReporter = ["text"]
-# Gate on line coverage per file (90%); all files clear it with margin
-# (~97% overall). The function metric is dropped because it counts every inline
-# callback, and the CLI has a few untestable by design (the process.exit
-# bootstrap, the fetch-timeout abort, a defensive .catch) that can't reach 90%
-# per file without test theater. Statement is dropped too: it tracks line
-# closely here and adds no signal over the line gate.
-coverageThreshold = { line = 0.90 }
+coverageThreshold = { line = 0.90, function = 0.90, statement = 0.90 }

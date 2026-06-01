@@ -64,21 +64,18 @@ export async function fetchLatestVersion(
   fetchImpl: typeof fetch = fetch,
 ): Promise<string | null> {
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    try {
-      const res = await fetchImpl(
-        `${REGISTRY_URL}/${encodePackageName(PACKAGE_NAME)}/latest`,
-        { signal: controller.signal, headers: { Accept: "application/json" } },
-      );
-      if (!res.ok) return null;
-      const body = (await res.json()) as { version?: unknown };
-      return typeof body.version === "string" && SEMVER_RE.test(body.version)
-        ? body.version
-        : null;
-    } finally {
-      clearTimeout(timer);
-    }
+    const res = await fetchImpl(
+      `${REGISTRY_URL}/${encodePackageName(PACKAGE_NAME)}/latest`,
+      {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        headers: { Accept: "application/json" },
+      },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { version?: unknown };
+    return typeof body.version === "string" && SEMVER_RE.test(body.version)
+      ? body.version
+      : null;
   } catch {
     return null;
   }

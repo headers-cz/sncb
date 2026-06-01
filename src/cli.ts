@@ -84,7 +84,11 @@ export async function runCli(argv: string[]): Promise<number> {
   try {
     await program.parseAsync(argv);
     if (invokedCommand !== "upgrade") {
-      await runBackgroundUpdateCheck(readVersion()).catch(() => undefined);
+      try {
+        await runBackgroundUpdateCheck(readVersion());
+      } catch {
+        // Background update check is best-effort; never fail the command on it.
+      }
     }
     await endInvocation(outcome);
     return 0;
@@ -253,5 +257,5 @@ function readVersion(): string {
 
 const isMain = import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
-  runCli(process.argv).then((code) => process.exit(code));
+  process.exit(await runCli(process.argv));
 }
