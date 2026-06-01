@@ -56,6 +56,8 @@ export interface AuditEntry {
 
 const STATE_DIR_NAME = "sncb";
 const AUDIT_FILE = "audit.log";
+const AUDIT_DIR_MODE = 0o700;
+const AUDIT_FILE_MODE = 0o600;
 const SECRET_FLAGS = new Set(["token"]);
 
 export function isAuditEnabled(): boolean {
@@ -150,8 +152,17 @@ export async function endInvocation(
 
 async function appendEntry(entry: AuditEntry, paths: AuditPaths): Promise<void> {
   try {
-    await fs.mkdir(dirname(paths.file), { recursive: true });
-    await fs.appendFile(paths.file, JSON.stringify(entry) + "\n", "utf-8");
+    const dir = dirname(paths.file);
+    // The audit log records api endpoints, resource ids and timestamps - keep
+    // it owner-only. Explicit chmods defeat the umask (mkdir/appendFile modes
+    // are umask-masked, and an existing file keeps its old mode).
+    await fs.mkdir(dir, { recursive: true, mode: AUDIT_DIR_MODE });
+    await fs.chmod(dir, AUDIT_DIR_MODE);
+    await fs.appendFile(paths.file, JSON.stringify(entry) + "\n", {
+      encoding: "utf-8",
+      mode: AUDIT_FILE_MODE,
+    });
+    await fs.chmod(paths.file, AUDIT_FILE_MODE);
   } catch {
     // Audit is fire-and-forget. Never break the user's command because we
     // couldn't write the log file.

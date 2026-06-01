@@ -5,6 +5,7 @@ import { readJsonContent } from "../lib/io.js";
 import type { Website, WebsiteDesign } from "../api/types.js";
 import { confirm } from "../lib/confirm.js";
 import { recordResponseMetadata } from "../lib/audit.js";
+import { stripControl } from "../lib/sanitize.js";
 
 const WEBSITE_COLUMNS: Column<Website>[] = [
   { header: "ID", value: (w) => w.id },
@@ -80,7 +81,7 @@ export function buildWebsiteCommand(getGlobal: () => GlobalOptions): Command {
       if (!opts.yes) {
         try {
           const w = await ctx.client.request<Website>(`/api/v1/websites/${id}`);
-          name = `'${w.name}' (${w.id})`;
+          name = `'${stripControl(w.name)}' (${w.id})`;
         } catch {
           // If we can't fetch (404, no perm), fall through to confirm with id
           // only; the DELETE call below will surface the real error.

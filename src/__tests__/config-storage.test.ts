@@ -44,7 +44,7 @@ describe("loadConfig", () => {
   it("returns defaults when file missing", async () => {
     const paths = { dir: tempHome, file: join(tempHome, "missing.json") };
     const cfg = await loadConfig(paths);
-    expect(cfg.apiUrl).toBe("https://app.seneca.headers.cz");
+    expect(cfg.apiUrl).toBe("https://app.senecabot.com");
     expect(cfg.token).toBeNull();
     expect(cfg.autoUpdate).toBe(true);
     expect(cfg.lastUpdateCheckAt).toBe(0);
@@ -56,7 +56,7 @@ describe("loadConfig", () => {
     await fs.writeFile(paths.file, JSON.stringify({ token: "snc_live_x" }));
     const cfg = await loadConfig(paths);
     expect(cfg.token).toBe("snc_live_x");
-    expect(cfg.apiUrl).toBe("https://app.seneca.headers.cz");
+    expect(cfg.apiUrl).toBe("https://app.senecabot.com");
   });
 
   it("respects stored apiUrl", async () => {

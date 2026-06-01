@@ -9,6 +9,8 @@
  * operator never intended. The agent must explicitly opt-in via --yes.
  */
 
+import { stripControl } from "./sanitize.js";
+
 export interface ConfirmDeps {
   stdin?: NodeJS.ReadableStream & { isTTY?: boolean };
   stdout?: NodeJS.WritableStream & { isTTY?: boolean };
@@ -38,7 +40,10 @@ export async function confirm(options: ConfirmOptions): Promise<boolean> {
     throw new ConfirmationRequiredError();
   }
 
-  stdout.write(`${options.prompt} [y/N]: `);
+  // The prompt often embeds server-controlled names/titles. Strip terminal
+  // control sequences so a crafted title cannot rewrite this line - the last
+  // safety gate before a destructive operation.
+  stdout.write(`${stripControl(options.prompt)} [y/N]: `);
   const answer = await readOneLine(stdin);
   const normalized = answer.trim().toLowerCase();
   return normalized === "y" || normalized === "yes";

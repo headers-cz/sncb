@@ -16,8 +16,8 @@ export function buildUpgradeCommand(deps: UpgradeDeps): Command {
   return new Command("upgrade")
     .description("Check for and install the latest sncb release")
     .option("--check", "Only check for a new version, do not install")
-    .option("--no-auto-update", "Disable background daily update checks")
-    .option("--auto-update", "Enable background daily update checks")
+    .option("--no-auto-update", "Disable the daily background update notification")
+    .option("--auto-update", "Enable the daily background update notification")
     .action(
       async (opts: { check?: boolean; autoUpdate?: boolean }): Promise<void> => {
         if (opts.autoUpdate !== undefined) {
@@ -49,7 +49,7 @@ function runInstall(
   const args = installArgs(cmd);
   log(`Running: ${cmd} ${args.join(" ")}`);
   return new Promise((resolve, reject) => {
-    const child = spawnImpl(cmd, args, { stdio: "inherit", env: process.env });
+    const child = spawnImpl(cmd, args, { stdio: "inherit", env: installEnv() });
     child.on("exit", (code) => {
       if (code === 0) {
         log("Upgrade complete.");
@@ -60,6 +60,18 @@ function runInstall(
     });
     child.on("error", reject);
   });
+}
+
+/**
+ * Environment for the install child. The API token must not leak into the
+ * package manager's lifecycle scripts (postinstall etc.), so SNCB_TOKEN is
+ * stripped. Everything else (PATH, npm config) is preserved so the install
+ * works as the user expects.
+ */
+function installEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env["SNCB_TOKEN"];
+  return env;
 }
 
 function detectPackageManager(): string {

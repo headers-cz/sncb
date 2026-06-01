@@ -17,23 +17,35 @@ After install, `sncb` is on your `$PATH`.
 You need a per-organization API token issued in the Seneca console.
 
 ```bash
-sncb auth login --token snc_live_xxx_yyyy
-# or interactive:
+# Recommended: interactive, non-echoing prompt (token never hits argv).
 sncb auth login
 
 sncb auth whoami
 sncb auth logout
 ```
 
-Token is stored at `~/.config/sncb/config.json` with mode `0600` (XDG Base Directory spec, respects `XDG_CONFIG_HOME`).
+For automation (CI, scripts), pass the token via the `SNCB_TOKEN` environment
+variable rather than a flag:
+
+```bash
+SNCB_TOKEN=snc_live_xxx_yyyy sncb website list
+```
+
+Token is stored at `~/.config/sncb/config.json` with mode `0600`, inside a
+`0700` directory (XDG Base Directory spec, respects `XDG_CONFIG_HOME`).
 
 Per-invocation overrides (highest priority first):
 
-* `--token <token>` flag
+* `--token <token>` flag - **avoid**: arguments are visible in process
+  listings (`ps`) and shell history. Prefer the prompt or `SNCB_TOKEN`. sncb
+  prints a warning when a token is supplied this way.
 * `SNCB_TOKEN` environment variable
 * Stored config
 
-Same priority applies to `--api-url` / `SNCB_API_URL`.
+Same priority applies to `--api-url` / `SNCB_API_URL`. The token is only sent
+over `https` (plain `http` is allowed for loopback dev hosts only), and a token
+read from stored config is never sent to a host other than the one it was
+stored for unless you pass `--insecure-allow-token-host`.
 
 ## Configuration
 
@@ -124,9 +136,9 @@ In JSON mode (or via `-v`), the raw API error envelope is `{ error: { code, mess
 
 ## Auto-update
 
-`sncb` checks npm once per 24 hours after any command (skipped for `sncb upgrade` itself). If a new version is available, you'll see a notice on stderr and a detached background install runs.
+`sncb` checks npm once per 24 hours after any command (skipped for `sncb upgrade` itself). If a new version is available, you'll see a one-line notice on stderr. It never installs anything on its own - run `sncb upgrade` to update.
 
-To disable:
+To disable the check:
 
 ```bash
 sncb upgrade --no-auto-update
@@ -147,7 +159,7 @@ sncb upgrade --check    # only report, no install
 
 ```json
 {
-  "apiUrl": "https://app.seneca.headers.cz",
+  "apiUrl": "https://app.senecabot.com",
   "token": "snc_live_xxx_yyyy",
   "autoUpdate": true,
   "lastUpdateCheckAt": 0,
@@ -162,7 +174,7 @@ Edit safely - it's a plain JSON file. Token field is sensitive; the file is crea
 ```bash
 bun install
 bun run dev -- --help     # run from source
-bun test                  # 160 tests
+bun test                  # run the test suite
 bun test --coverage       # coverage report
 bun run lint
 bun run typecheck
@@ -171,4 +183,4 @@ bun run build             # produces dist/cli.js
 
 ## License
 
-UNLICENSED - internal to Headers.
+MIT - see [LICENSE](LICENSE).

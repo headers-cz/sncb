@@ -33,7 +33,7 @@ describe("config get", () => {
   it("prints defaults when no config file exists yet", async () => {
     await run("get");
     const out = JSON.parse(logs[0] ?? "");
-    expect(out.apiUrl).toBe("https://app.seneca.headers.cz");
+    expect(out.apiUrl).toBe("https://app.senecabot.com");
     expect(out.token).toBeNull();
     expect(out.autoUpdate).toBe(true);
   });
@@ -99,6 +99,18 @@ describe("config set", () => {
     await expect(run("set", "apiUrl", "not-a-url")).rejects.toThrow(/not a valid URL/);
   });
 
+  it("rejects plaintext http to a remote host", async () => {
+    await expect(run("set", "apiUrl", "http://api.example.com")).rejects.toThrow(
+      /plaintext http/,
+    );
+  });
+
+  it("still allows http to loopback for local dev", async () => {
+    await run("set", "apiUrl", "http://localhost:3002");
+    const cfg = JSON.parse(await readFile(paths.file, "utf-8"));
+    expect(cfg.apiUrl).toBe("http://localhost:3002");
+  });
+
   it("parses boolean values for autoUpdate", async () => {
     await run("set", "autoUpdate", "false");
     const cfg = JSON.parse(await readFile(paths.file, "utf-8"));
@@ -139,13 +151,13 @@ describe("config unset", () => {
     );
     await run("unset", "apiUrl");
     const cfg = JSON.parse(await readFile(paths.file, "utf-8"));
-    expect(cfg.apiUrl).toBe("https://app.seneca.headers.cz");
+    expect(cfg.apiUrl).toBe("https://app.senecabot.com");
   });
 
   it("clears token", async () => {
     await saveConfig(
       {
-        apiUrl: "https://app.seneca.headers.cz",
+        apiUrl: "https://app.senecabot.com",
         token: "snc_live_xyz",
         autoUpdate: true,
         lastUpdateCheckAt: 0,

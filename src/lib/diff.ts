@@ -1,4 +1,5 @@
 import { ansi } from "./ansi.js";
+import { stripControl } from "./sanitize.js";
 
 /**
  * Minimal line-based diff for CLI output. Uses an LCS table (O(n*m) time and
@@ -133,9 +134,13 @@ export function renderDiff(
       continue;
     }
     flushSkipped();
-    if (h.op === "add") out.push(add(`+ ${h.line}`));
-    else if (h.op === "remove") out.push(remove(`- ${h.line}`));
-    else out.push(`  ${h.line}`);
+    // Page content is attacker-influenceable free-form text; neutralize any
+    // embedded escape sequences before printing (keep TAB so indentation in
+    // the diff still reads correctly). Colour is applied after sanitization.
+    const line = stripControl(h.line, { multiline: true });
+    if (h.op === "add") out.push(add(`+ ${line}`));
+    else if (h.op === "remove") out.push(remove(`- ${line}`));
+    else out.push(`  ${line}`);
   }
   flushSkipped();
   return out.join("\n");

@@ -5,6 +5,7 @@ import {
   readAuditEntries,
   type AuditEntry,
 } from "../lib/audit.js";
+import { stripControl } from "../lib/sanitize.js";
 
 const DEFAULT_LAST = 50;
 
@@ -20,6 +21,8 @@ export function buildAuditCommand(deps: AuditDeps = {}): Command {
   const err = deps.err ?? ((msg: string): void => {
     process.stderr.write(msg + "\n");
   });
+  const stdin = deps.stdin ?? process.stdin;
+  const stdout = deps.stdout ?? process.stdout;
 
   const audit = new Command("audit").description(
     "Inspect the local audit log of every sncb operation",
@@ -77,14 +80,14 @@ export function buildAuditCommand(deps: AuditDeps = {}): Command {
     .option("-y, --yes", "Skip confirmation prompt", false)
     .action(
       async (opts: { olderThan?: string; yes?: boolean }): Promise<void> => {
-        const inTty = Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
+        const inTty = Boolean(stdin.isTTY) && Boolean(stdout.isTTY);
         if (!opts.yes && inTty) {
-          process.stdout.write(
+          stdout.write(
             opts.olderThan !== undefined
               ? `Delete audit entries older than ${opts.olderThan}? [y/N]: `
               : "Delete ALL audit entries? [y/N]: ",
           );
-          const ans = await readOneLine(process.stdin);
+          const ans = await readOneLine(stdin);
           if (ans.trim().toLowerCase() !== "y" && ans.trim().toLowerCase() !== "yes") {
             err("Aborted.");
             return;
@@ -117,7 +120,11 @@ function formatEntry(e: AuditEntry): string {
   const outcomeBadge = badge(e);
   const cmd = `${e.cmd}${formatArgs(e.args)}${formatFlags(e.flags)}`;
   const detail = formatDetail(e);
-  return `${ts}  ${outcomeBadge}  ${cmd.padEnd(48)}  ${detail}`;
+  // Persisted fields (chiefly error_code) can carry server-controlled escape
+  // sequences that round-trip through JSON. Strip them from the human view so
+  // `audit tail` cannot be turned into a delayed terminal-injection vector.
+  // The --json branch in buildAuditCommand emits raw entries and is untouched.
+  return stripControl(`${ts}  ${outcomeBadge}  ${cmd.padEnd(48)}  ${detail}`);
 }
 
 function badge(e: AuditEntry): string {

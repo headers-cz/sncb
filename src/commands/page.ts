@@ -7,6 +7,7 @@ import { confirm } from "../lib/confirm.js";
 import { recordResponseMetadata } from "../lib/audit.js";
 import { lineDiff, diffStats, renderDiff } from "../lib/diff.js";
 import { ansi } from "../lib/ansi.js";
+import { stripControl } from "../lib/sanitize.js";
 
 const PAGE_COLUMNS: Column<Page>[] = [
   { header: "ID", value: (p) => p.id },
@@ -191,7 +192,7 @@ export function buildPageCommand(getGlobal: () => GlobalOptions): Command {
       if (!opts.yes) {
         try {
           const pg = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
-          label = `'${pg.title}' (${pg.id})`;
+          label = `'${stripControl(pg.title)}' (${pg.id})`;
         } catch {
           // fall through to id-only prompt; DELETE will surface real error
         }
@@ -350,9 +351,11 @@ function buildPageDraftCommand(getGlobal: () => GlobalOptions): Command {
         console.log(render({ format: ctx.format, data: payload }));
         return;
       }
-      console.log(`Draft title: ${item.draft_title ?? "(unchanged)"}`);
+      console.log(
+        `Draft title: ${stripControl(item.draft_title ?? "(unchanged)")}`,
+      );
       console.log("Draft content:");
-      console.log(item.draft_content ?? "(unchanged)");
+      console.log(stripControl(item.draft_content ?? "(unchanged)", { multiline: true }));
     });
 
   draft
@@ -390,7 +393,9 @@ function buildPageDraftCommand(getGlobal: () => GlobalOptions): Command {
           return;
         }
         if (liveTitle !== draftTitle) {
-          console.log(`Title: ${liveTitle}  ->  ${draftTitle}`);
+          console.log(
+            `Title: ${stripControl(liveTitle)}  ->  ${stripControl(draftTitle)}`,
+          );
         }
         console.log(
           `Content: +${stats.added} -${stats.removed} (${stats.kept} unchanged)`,
@@ -418,7 +423,7 @@ function buildPageDraftCommand(getGlobal: () => GlobalOptions): Command {
       // Runs even with --yes so a scripted "discard everything" loop is a
       // no-op for already-clean pages instead of issuing wasted DELETEs.
       const pg = await ctx.client.request<Page>(`/api/v1/pages/${id}`);
-      const label = `'${pg.title}' (${pg.id})`;
+      const label = `'${stripControl(pg.title)}' (${pg.id})`;
       if (!pg.has_draft) {
         process.stderr.write(
           `${ansi.yellow(`No pending draft for ${label}. Nothing to discard.`)}\n`,

@@ -85,4 +85,59 @@ describe("createContext", () => {
     const ctx = await createContext({});
     expect(ctx).toBeDefined();
   });
+
+  async function storeToken(apiUrl: string): Promise<void> {
+    await saveConfig(
+      {
+        apiUrl,
+        token: "snc_live_stored",
+        autoUpdate: true,
+        lastUpdateCheckAt: 0,
+        lastSeenLatestVersion: null,
+      },
+      getConfigPaths(),
+    );
+  }
+
+  it("refuses to send a stored token to a different host", async () => {
+    await storeToken("https://app.senecabot.com");
+    await expect(
+      createContext({ apiUrl: "https://evil.tld" }),
+    ).rejects.toThrow(/Refusing to send your stored API token/);
+  });
+
+  it("refuses a stored token to a host injected via SNCB_API_URL", async () => {
+    await storeToken("https://app.senecabot.com");
+    process.env["SNCB_API_URL"] = "https://evil.tld";
+    await expect(createContext({})).rejects.toThrow(/stored API token/);
+  });
+
+  it("allows a different host with --insecure-allow-token-host", async () => {
+    await storeToken("https://app.senecabot.com");
+    const ctx = await createContext({
+      apiUrl: "https://staging.example",
+      insecureAllowTokenHost: true,
+    });
+    expect(ctx).toBeDefined();
+  });
+
+  it("allows a different host when the token is supplied explicitly", async () => {
+    await storeToken("https://app.senecabot.com");
+    const ctx = await createContext({
+      apiUrl: "https://staging.example",
+      token: "snc_live_explicit",
+    });
+    expect(ctx).toBeDefined();
+  });
+
+  it("rejects plaintext http to a remote host", async () => {
+    await expect(
+      createContext({ apiUrl: "http://evil.tld", token: "t" }),
+    ).rejects.toThrow(/plaintext http/);
+  });
+
+  it("allows http to loopback for local dev", async () => {
+    const ctx = await createContext({ apiUrl: "http://localhost:3002", token: "t" });
+    expect(ctx).toBeDefined();
+  });
 });

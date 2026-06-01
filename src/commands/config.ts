@@ -6,12 +6,12 @@ import {
   type ConfigPaths,
   type SncbConfig,
 } from "../config/storage.js";
+import { DEFAULT_API_URL, isInsecureOptIn, parseApiUrl } from "../lib/api-url.js";
 
 const EDITABLE_KEYS = ["apiUrl", "token", "autoUpdate"] as const;
 type EditableKey = (typeof EDITABLE_KEYS)[number];
 
 const TOKEN_MASK_PREFIX = 8;
-const DEFAULT_API_URL = "https://app.seneca.headers.cz";
 
 export interface ConfigDeps {
   paths?: ConfigPaths;
@@ -120,18 +120,10 @@ function applyValue(
 }
 
 function normalizeApiUrl(raw: string): string {
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      throw new Error(`apiUrl must use http or https, got ${url.protocol}`);
-    }
-    return raw.replace(/\/+$/, "");
-  } catch (err) {
-    if (err instanceof TypeError) {
-      throw new Error(`apiUrl is not a valid URL: ${raw}`);
-    }
-    throw err;
-  }
+  // parseApiUrl validates the scheme and rejects plaintext http to a remote
+  // host (loopback http stays allowed for local dev; SNCB_INSECURE overrides).
+  parseApiUrl(raw, { allowInsecure: isInsecureOptIn() });
+  return raw.replace(/\/+$/, "");
 }
 
 function parseBoolean(raw: string): boolean {

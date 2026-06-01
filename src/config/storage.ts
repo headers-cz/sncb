@@ -1,11 +1,12 @@
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { DEFAULT_API_URL } from "../lib/api-url.js";
 
 const CONFIG_DIR_NAME = "sncb";
 const CONFIG_FILE_NAME = "config.json";
-const DEFAULT_API_URL = "https://app.seneca.headers.cz";
 const CONFIG_FILE_MODE = 0o600;
+const CONFIG_DIR_MODE = 0o700;
 
 export interface SncbConfig {
   apiUrl: string;
@@ -55,7 +56,12 @@ export async function saveConfig(
   config: SncbConfig,
   paths: ConfigPaths = getConfigPaths(),
 ): Promise<void> {
-  await fs.mkdir(dirname(paths.file), { recursive: true });
+  const dir = dirname(paths.file);
+  // Keep the directory owner-only too: the token file is 0600, but a
+  // world-listable dir still leaks existence/activity timing. Explicit chmods
+  // defeat the umask (mkdir/writeFile modes are umask-masked).
+  await fs.mkdir(dir, { recursive: true, mode: CONFIG_DIR_MODE });
+  await fs.chmod(dir, CONFIG_DIR_MODE);
   const body = JSON.stringify(config, null, 2);
   await fs.writeFile(paths.file, body, { mode: CONFIG_FILE_MODE });
   await fs.chmod(paths.file, CONFIG_FILE_MODE);
