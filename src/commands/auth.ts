@@ -4,7 +4,6 @@ import { loadConfig, saveConfig, clearToken } from "../config/storage.js";
 import { ApiClient } from "../api/client.js";
 import type { Health } from "../api/types.js";
 import { isInsecureOptIn, parseApiUrl } from "../lib/api-url.js";
-import { warnTokenOnArgv } from "../lib/context.js";
 
 export interface AuthDeps {
   promptToken?: () => Promise<string>;
@@ -19,14 +18,19 @@ export function buildAuthCommand(deps: AuthDeps = {}): Command {
   auth
     .command("login")
     .description("Store API token in ~/.config/sncb/config.json")
-    .option("--token <token>", "API token (skips interactive prompt)")
     .option("--api-url <url>", "API base URL to store")
-    .action(async (opts: { token?: string; apiUrl?: string }) => {
-      warnTokenOnArgv(opts.token !== undefined);
-      const token = opts.token ?? (await (deps.promptToken ?? defaultPromptToken)());
+    .action(async (opts: { apiUrl?: string }, command: Command) => {
+      // The root program's global --api-url shadows this subcommand's option,
+      // so read the merged view to get it regardless of where it was parsed.
+      const merged = command.optsWithGlobals() as { apiUrl?: string };
+      const apiUrlFlag = merged.apiUrl ?? opts.apiUrl;
+      // The token is accepted ONLY via the interactive (non-echoing) prompt -
+      // never a flag, since argv leaks into `ps` and shell history. Automation
+      // sets the SNCB_TOKEN env var per command instead of logging in.
+      const token = await (deps.promptToken ?? defaultPromptToken)();
       if (!token) throw new Error("Token is required.");
       const stored = await loadConfig();
-      const apiUrl = opts.apiUrl ?? stored.apiUrl;
+      const apiUrl = apiUrlFlag ?? stored.apiUrl;
       // Validate the URL before the health probe sends the token to it: reject
       // bad schemes and plaintext http to a remote host (loopback http is fine
       // for local dev; SNCB_INSECURE overrides).
