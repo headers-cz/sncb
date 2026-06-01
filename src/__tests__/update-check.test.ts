@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, mock, spyOn, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -152,5 +152,20 @@ describe("runBackgroundUpdateCheck", () => {
     const malicious = "9.9.9]0;pwned";
     const v = await fetchLatestVersion(fakeFetch(malicious));
     expect(v).toBeNull();
+  });
+
+  it("falls back to the default stderr notifier when none is injected", async () => {
+    let written = "";
+    const spy = spyOn(process.stderr, "write").mockImplementation(((c: unknown) => {
+      written += String(c);
+      return true;
+    }) as typeof process.stderr.write);
+    try {
+      const res = await runBackgroundUpdateCheck("0.1.0", { fetchImpl: fakeFetch("0.2.0") });
+      expect(res.newer).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(written).toContain("sncb update:");
   });
 });

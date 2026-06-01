@@ -1,8 +1,27 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, spyOn, beforeEach, afterEach } from "bun:test";
 import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { buildAuditCommand } from "../commands/audit.js";
+
+function fakeTty(input: string): {
+  stdin: Readable & { isTTY?: boolean };
+  stdout: NodeJS.WritableStream & { isTTY?: boolean };
+  written: string[];
+} {
+  const stdin = Readable.from([input]) as Readable & { isTTY?: boolean };
+  stdin.isTTY = true;
+  const written: string[] = [];
+  const stdout = {
+    isTTY: true,
+    write: (chunk: string | Buffer): boolean => {
+      written.push(chunk.toString());
+      return true;
+    },
+  } as unknown as NodeJS.WritableStream & { isTTY?: boolean };
+  return { stdin, stdout, written };
+}
 
 let tempBase: string;
 let auditFile: string;
@@ -136,5 +155,78 @@ describe("audit clear", () => {
   it("refuses in non-TTY without --yes", async () => {
     await run("clear");
     expect(errs.some((m) => m.includes("non-interactive"))).toBe(true);
+  });
+
+  it("uses the default stderr err callback when none is injected", async () => {
+    let written = "";
+    const spy = spyOn(process.stderr, "write").mockImplementation(((c: unknown) => {
+      written += String(c);
+      return true;
+    }) as typeof process.stderr.write);
+    try {
+      const cmd = buildAuditCommand({ log }); // no err dep -> default stderr err
+      cmd.exitOverride();
+      await cmd.parseAsync(["clear"], { from: "user" });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(written).toContain("refusing to clear audit log");
+  });
+});
+
+describe("audit clear (interactive TTY)", () => {
+  beforeEach(async () => {
+    await writeEntries([
+      { ts: new Date().toISOString(), pid: 1, cmd: "a", args: [], flags: {}, outcome: "ok" },
+      { ts: new Date().toISOString(), pid: 1, cmd: "b", args: [], flags: {}, outcome: "ok" },
+    ]);
+  });
+
+  it("clears after a 'y' confirmation", async () => {
+    const { stdin, stdout, written } = fakeTty("y\n");
+    const cmd = buildAuditCommand({ log, err, stdin, stdout });
+    cmd.exitOverride();
+    await cmd.parseAsync(["clear"], { from: "user" });
+    expect(written.join("")).toContain("Delete ALL audit entries?");
+    expect(logs.join("\n")).toMatch(/Deleted 2 entries/);
+  });
+
+  it("aborts when the user does not confirm", async () => {
+    const { stdin, stdout } = fakeTty("n\n");
+    const cmd = buildAuditCommand({ log, err, stdin, stdout });
+    cmd.exitOverride();
+    await cmd.parseAsync(["clear"], { from: "user" });
+    expect(errs.some((m) => m.includes("Aborted"))).toBe(true);
+  });
+
+  it("shows the older-than prompt variant", async () => {
+    const { stdin, stdout, written } = fakeTty("y\n");
+    const cmd = buildAuditCommand({ log, err, stdin, stdout });
+    cmd.exitOverride();
+    await cmd.parseAsync(["clear", "--older-than", "30d"], { from: "user" });
+    expect(written.join("")).toContain("older than 30d");
+  });
+});
+
+describe("audit tail parsing", () => {
+  beforeEach(async () => {
+    await writeEntries([
+      { ts: new Date().toISOString(), pid: 1, cmd: "recent", args: [], flags: {}, outcome: "ok" },
+      { ts: "2020-01-01T00:00:00.000Z", pid: 1, cmd: "old", args: [], flags: {}, outcome: "ok" },
+    ]);
+  });
+
+  it("filters by --since duration", async () => {
+    await run("tail", "--since", "1h");
+    expect(logs.some((l) => l.includes("recent"))).toBe(true);
+    expect(logs.some((l) => l.includes("old"))).toBe(false);
+  });
+
+  it("rejects an invalid --since duration", async () => {
+    await expect(run("tail", "--since", "soon")).rejects.toThrow(/Invalid duration/);
+  });
+
+  it("rejects an invalid --last value", async () => {
+    await expect(run("tail", "--last", "0")).rejects.toThrow(/positive integer/);
   });
 });

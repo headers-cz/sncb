@@ -21,6 +21,8 @@ export function buildAuditCommand(deps: AuditDeps = {}): Command {
   const err = deps.err ?? ((msg: string): void => {
     process.stderr.write(msg + "\n");
   });
+  const stdin = deps.stdin ?? process.stdin;
+  const stdout = deps.stdout ?? process.stdout;
 
   const audit = new Command("audit").description(
     "Inspect the local audit log of every sncb operation",
@@ -78,14 +80,14 @@ export function buildAuditCommand(deps: AuditDeps = {}): Command {
     .option("-y, --yes", "Skip confirmation prompt", false)
     .action(
       async (opts: { olderThan?: string; yes?: boolean }): Promise<void> => {
-        const inTty = Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
+        const inTty = Boolean(stdin.isTTY) && Boolean(stdout.isTTY);
         if (!opts.yes && inTty) {
-          process.stdout.write(
+          stdout.write(
             opts.olderThan !== undefined
               ? `Delete audit entries older than ${opts.olderThan}? [y/N]: `
               : "Delete ALL audit entries? [y/N]: ",
           );
-          const ans = await readOneLine(process.stdin);
+          const ans = await readOneLine(stdin);
           if (ans.trim().toLowerCase() !== "y" && ans.trim().toLowerCase() !== "yes") {
             err("Aborted.");
             return;
