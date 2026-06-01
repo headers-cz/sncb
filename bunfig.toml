@@ -2,7 +2,9 @@
 coverage = true
 coverageSkipTestFiles = true
 coverageReporter = ["text"]
-# Number form = aggregate gate (the object form is enforced per-file by Bun in
-# CI, which trips on the hidden per-file statement metric for files with a few
-# untestable lines). Aggregate sits at ~98%.
-coverageThreshold = 0.9
+# Coverage is reported in CI (currently ~98% line/function aggregate) but not
+# hard-gated. Bun enforces coverageThreshold per file on a statement metric the
+# text reporter does not show and that is not reproducible locally (local Bun
+# does not enforce the threshold at all), so a hard gate blocks legitimate PRs
+# over an invisible number. Re-introduce once Bun's per-file behavior is
+# visible/stable, or convert to an external coverage check.
