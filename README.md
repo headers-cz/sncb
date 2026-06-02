@@ -7,7 +7,7 @@ Runs on [Bun](https://bun.com) (>= 1.3).
 ## Install
 
 ```bash
-bun install -g @headers/sncb
+bun install -g @senecabot/sncb
 ```
 
 After install, `sncb` is on your `$PATH`.
