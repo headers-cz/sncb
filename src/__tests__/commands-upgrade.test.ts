@@ -79,7 +79,7 @@ describe("upgrade", () => {
     const calls = (spawnImpl as unknown as { mock: { calls: [string, string[]][] } })
       .mock.calls;
     expect(calls.length).toBe(1);
-    expect(calls[0]?.[1]).toContain("@headers/sncb@latest");
+    expect(calls[0]?.[1]).toContain("@senecabot/sncb@latest");
   });
 
   it("rejects on non-zero exit", async () => {

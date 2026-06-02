@@ -82,7 +82,7 @@ function detectPackageManager(): string {
 }
 
 function installArgs(cmd: string): string[] {
-  const pkg = "@headers/sncb@latest";
+  const pkg = "@senecabot/sncb@latest";
   if (cmd === "bun") return ["install", "-g", pkg];
   if (cmd === "pnpm") return ["add", "-g", pkg];
   return ["install", "-g", pkg];

@@ -1,7 +1,7 @@
 import { loadConfig, saveConfig } from "../config/storage.js";
 import { isNewer } from "./version.js";
 
-const PACKAGE_NAME = "@headers/sncb";
+const PACKAGE_NAME = "@senecabot/sncb";
 const REGISTRY_URL = "https://registry.npmjs.org";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 5000;
