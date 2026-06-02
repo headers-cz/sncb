@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.1](https://github.com/headers-cz/sncb/compare/v0.4.0...v0.4.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* **auth:** make login prompt-only and honor --api-url ([f73cd12](https://github.com/headers-cz/sncb/commit/f73cd12955360668712a50ee62516b5cb55b5399))
+* **config:** default to the public API host https://app.senecabot.com ([690f759](https://github.com/headers-cz/sncb/commit/690f75996cd6f0bbfebfd9205e6fffa9903276e9))
+* **npm:** publish under the [@senecabot](https://github.com/senecabot) scope ([b4bd62d](https://github.com/headers-cz/sncb/commit/b4bd62d452d51f960739a3553107b77f93a58426))
+* **npm:** publish under the [@senecabot](https://github.com/senecabot) scope ([5aff99e](https://github.com/headers-cz/sncb/commit/5aff99e8495ddaf5e0eda18d7f53ba348624e8d4))
+* **security:** harden sncb CLI + MIT license for public release ([17774e2](https://github.com/headers-cz/sncb/commit/17774e283445e346686c61d75b9018063d2e2c41))
+* **security:** harden token handling, terminal output, and auto-update ([53a385b](https://github.com/headers-cz/sncb/commit/53a385b239669d1eeb01b7a1894eb47054ba5516))
+* **test:** reset leaked process.exitCode in audit tests; restore coverage gate ([6be72b8](https://github.com/headers-cz/sncb/commit/6be72b8aef8e746f0eecab0b3ce5bd7e85942595))
+
 ## [0.4.0](https://github.com/headers-cz/sncb/compare/v0.3.0...v0.4.0) (2026-05-16)
 
 
